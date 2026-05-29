@@ -1,0 +1,59 @@
+# =====================================================================
+#  SAP Bank Statement Integration - Configuracion
+#  Todos los parametros externalizados. NO hardcodear nada en el codigo.
+# =====================================================================
+
+sap:
+  # URL base de Service Layer, incluyendo el puerto y el path /b1s/v1
+  base_url: "https://SERVIDOR_SAP:50000/b1s/v1"
+  company_db: "SBO_EMPRESA"
+  username: "manager"
+  password: "CAMBIAR_ESTA_CLAVE"
+  # Re-login preventivo antes de este tiempo. Debe ser <= al timeout real de SL.
+  session_timeout_minutes: 30
+  # verify_ssl:
+  #   false  -> NO valida el certificado (solo ambientes de prueba)
+  #   "/ruta/cert.pem" -> valida contra el certificado corporativo (PRODUCCION)
+  verify_ssl: false
+
+paths:
+  inbound: "./data/inbound"        # entrada de CSV del banco
+  processed: "./data/processed"    # CSV procesados al 100% EXITO
+  errors: "./data/errors"          # CSV con al menos un ERROR/OBSERVADO
+  reports: "./data/reports"        # reportes .xlsx de conciliacion
+
+scheduler:
+  interval_seconds: 60             # cada cuanto escanea la carpeta inbound
+
+concurrency:
+  # Hilos simultaneos para los POST. Mantener bajo para no saturar Service Layer
+  # ni superar el limite de sesiones concurrentes. 4-8 es un buen rango.
+  max_workers: 6
+
+accounts:
+  cash_account: "1.1.01.001"       # CashAccount default (EFECTIVO sin cuenta_caja)
+  transfer_account: "1.1.02.001"   # TransferAccount default (TRANSFERENCIA sin cuenta_banco)
+  default_card_code: 1             # CreditCard default (entero) cuando codigo_tarjeta esta vacio
+  # Cuenta contable asociada a la tarjeta (CreditAcct). Algunos esquemas SAP
+  # la exigen. Dejar vacio si tu configuracion no la requiere.
+  credit_card_account: ""
+
+retry:
+  max_attempts: 3                  # reintentos ante 5xx
+  backoff_seconds: 5               # espera = backoff_seconds * numero_intento
+
+idempotency:
+  # Si esta activo, antes de cada POST consulta si ya existe un IncomingPayment
+  # con la misma referencia. Si existe, la fila se marca OMITIDA (no se repostea),
+  # evitando pagos duplicados si un CSV se reenvia. Cuesta un GET extra por fila.
+  enabled: false
+  # Campo SAP donde se guarda y se busca la referencia unica.
+  # Recomendado: un UDF de ORCT, ej. "U_RefBanco" (crealo antes en SAP).
+  # Alternativa simple: "Remarks" (pero ojo, sobreescribe la glosa con la referencia).
+  reference_field: "U_RefBanco"
+  # La referencia se toma de la columna 'referencia' del CSV; si esa columna esta
+  # vacia, se usa 'descripcion' como clave de deduplicacion.
+
+logging:
+  level: "INFO"                    # DEBUG | INFO | WARNING | ERROR
+  file: "./data/integration.log"

@@ -1,0 +1,26 @@
+# ---- Entorno virtual ----
+.venv/
+venv/
+env/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ---- Configuracion con credenciales REALES (NO subir nunca) ----
+config.yaml
+
+# ---- Datos bancarios y reportes (informacion sensible) ----
+data/
+
+# ---- Logs ----
+*.log
+
+# ---- VS Code (opcional: borra esta linea si quieres compartir launch.json) ----
+.vscode/
+
+# ---- Sistema operativo ----
+.DS_Store
+Thumbs.db

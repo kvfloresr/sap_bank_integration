@@ -1,0 +1,94 @@
+{
+	"info": {
+		"_postman_id": "6d184e3e-23e9-4bed-b9ac-536b6105afbe",
+		"name": "SAP B1 API LTHv3",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "33375304"
+	},
+	"item": [
+		{
+			"name": "Login SAP B1",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "\tapplication/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"CompanyDB\": \"TAJIBOS_QA\",\r\n  \"UserName\": \"manager\",\r\n  \"Password\": \"AddProd25$\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://20.85.79.25:50000/b1s/v1/Login",
+					"protocol": "https",
+					"host": [
+						"20",
+						"85",
+						"79",
+						"25"
+					],
+					"port": "50000",
+					"path": [
+						"b1s",
+						"v1",
+						"Login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Items_get Proveedores",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Prefer",
+						"value": "odata.maxpagesize=10000",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://20.85.79.25:50000/b1s/v1/BusinessPartners?$filter=CardType eq 'S' and CreateDate gt '2026-05-01T00:00:00'&$select=CardName,CardForeignName,FederalTaxID,CompanyPrivate,Phone1,DefaultBankCode,DefaultAccount,CardCode,CreateDate ",
+					"protocol": "https",
+					"host": [
+						"20",
+						"85",
+						"79",
+						"25"
+					],
+					"port": "50000",
+					"path": [
+						"b1s",
+						"v1",
+						"BusinessPartners"
+					],
+					"query": [
+						{
+							"key": "$filter",
+							"value": "CardType eq 'S' and CreateDate gt '2026-05-01T00:00:00'"
+						},
+						{
+							"key": "$select",
+							"value": "CardName,CardForeignName,FederalTaxID,CompanyPrivate,Phone1,DefaultBankCode,DefaultAccount,CardCode,CreateDate "
+						},
+						{
+							"key": "$expand",
+							"value": "BPAddresses($select=AddressName,AddressName2),ContactEmployees($select=Name,MobilePhone,E_Mail)",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

@@ -1,8 +1,3 @@
-# =====================================================================
-#  SAP Bank Statement Integration - Configuracion
-#  Todos los parametros externalizados. NO hardcodear nada en el codigo.
-# =====================================================================
-
 sap:
   # URL base de Service Layer, incluyendo el puerto y el path /b1s/v1
   base_url: "https://SERVIDOR_SAP:50000/b1s/v1"

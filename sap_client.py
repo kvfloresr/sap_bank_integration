@@ -1,31 +1,53 @@
-"""
-sap_client.py
--------------
-Cliente para SAP Business One Service Layer.
-
-Responsabilidades:
-  - Login y gestion de la cookie B1SESSION.
-  - POST a IncomingPayments.
-  - Re-login transparente ante HTTP 401 (sesion expirada).
-  - Reintentos con backoff ante 5xx.
-  - Es THREAD-SAFE: una sola sesion/cookie compartida por todos los hilos del
-    ThreadPoolExecutor. El re-login se serializa con un lock y un contador de
-    "generacion" para que, si varios hilos reciben 401 a la vez, solo UNO
-    renueve la sesion y el resto reutilice la cookie ya refrescada.
-"""
-
 from __future__ import annotations
 
+import json
 import logging
+import ssl
 import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
 
 import requests
+import urllib3
+from requests.adapters import HTTPAdapter
 
 logger = logging.getLogger(__name__)
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# ------------------------------------------------------------------ TLS fix
+
+class TLSAdapter(HTTPAdapter):
+    """
+    Adaptador SSL permisivo para SAP Service Layer con certificado auto-firmado.
+    Fuerza TLS 1.0/1.1 que usan los servidores SAP B1 en ambientes de prueba.
+    Python 3.12+ bloquea estos protocolos por defecto; este adaptador los
+    rehabilita explicitamente solo para las conexiones al Service Layer.
+    Solo se monta en la sesion cuando verify_ssl es False (ambientes de prueba).
+    """
+
+    @staticmethod
+    def _make_ssl_context() -> ssl.SSLContext:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        # Habilitar TLS 1.0 y 1.1 que usan los SAP B1 legacy
+        ctx.minimum_version = ssl.TLSVersion.TLSv1
+        ctx.set_ciphers("DEFAULT@SECLEVEL=0")
+        return ctx
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs["ssl_context"] = self._make_ssl_context()
+        super().init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, proxy, **kwargs):
+        kwargs["ssl_context"] = self._make_ssl_context()
+        return super().proxy_manager_for(proxy, **kwargs)
+
+
+# ------------------------------------------------------------------ dominio
 
 class SapAuthError(Exception):
     """No se pudo autenticar contra Service Layer."""
@@ -40,6 +62,8 @@ class PostOutcome:
     doc_num: Optional[int] = None
     error: str = ""
 
+
+# ------------------------------------------------------------------ cliente
 
 class SapClient:
     def __init__(self, sap_cfg: dict, retry_cfg: dict):
@@ -58,12 +82,13 @@ class SapClient:
         # los hilos sepan si "su" sesion ya quedo obsoleta y otro la renovo.
         self._generation = 0
 
-        # Silenciar el warning de certificado auto-firmado cuando verify=False
+        # Montar el adaptador TLS permisivo cuando verify_ssl es False.
+        # Esto resuelve SSLV3_ALERT_HANDSHAKE_FAILURE en Python 3.12+ con
+        # el certificado auto-firmado de SAP Service Layer en QAS/DEV.
         if self.verify is False:
-            try:
-                requests.packages.urllib3.disable_warnings()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            adapter = TLSAdapter()
+            self._session.mount("https://", adapter)
+            self._session.mount("http://", adapter)
 
     # ------------------------------------------------------------------ login
 
@@ -180,7 +205,6 @@ class SapClient:
         Devuelve el DocEntry del documento existente, o None si no existe.
         Hace un GET con $filter/$select/$top=1 y maneja re-login en 401.
         """
-        # Escapar comilla simple segun OData (se duplica)
         safe = value.replace("'", "''")
         flt = f"{field} eq '{safe}'"
         url = f"{self.base_url}/IncomingPayments"
@@ -195,7 +219,7 @@ class SapClient:
                 )
             except requests.RequestException as exc:
                 logger.warning("Fallo de red en chequeo de idempotencia: %s", exc)
-                return None  # ante la duda, no bloqueamos el POST
+                return None
 
             if resp.status_code == 200:
                 data = self._safe_json(resp)
@@ -211,8 +235,7 @@ class SapClient:
                 "Chequeo de idempotencia devolvio HTTP %s: %s",
                 resp.status_code, self._extract_sap_error(resp),
             )
-            return None  # no pudimos verificar; dejamos que el POST decida
-
+            return None
 
     def _sleep_backoff(self, attempt: int) -> None:
         wait = self.backoff_seconds * attempt
@@ -243,3 +266,38 @@ class SapClient:
             self._session.post(f"{self.base_url}/Logout", verify=self.verify, timeout=15)
         except requests.RequestException:
             pass
+
+
+# ------------------------------------------------------------------ dry-run
+
+class DryRunClient:
+    """
+    Cliente simulado para --dry-run. NO se conecta a SAP ni crea documentos:
+    registra en el log el payload que se enviaria y devuelve un exito ficticio.
+
+    Expone la misma interfaz publica que SapClient usada por el procesador y el
+    watcher, asi que el pipeline completo (deteccion, lock, parseo, construccion
+    de payload, reporte) se ejecuta igual, pero sin tocar SAP.
+    """
+
+    def __init__(self) -> None:
+        logger.info("=== MODO DRY-RUN: no se insertara nada en SAP ===")
+
+    def ensure_session(self) -> None:
+        logger.info("[DRY-RUN] (sin sesion real con Service Layer)")
+
+    def login(self) -> None:
+        pass
+
+    def incoming_payment_exists(self, field: str, value: str) -> Optional[int]:
+        return None
+
+    def post_incoming_payment(self, payload: dict) -> PostOutcome:
+        logger.info(
+            "[DRY-RUN] IncomingPayment que se enviaria:\n%s",
+            json.dumps(payload, indent=2, ensure_ascii=False),
+        )
+        return PostOutcome(ok=True, status_code=201, doc_entry=None, doc_num=None)
+
+    def logout(self) -> None:
+        pass

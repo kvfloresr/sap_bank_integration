@@ -23,7 +23,7 @@ class PaymentType(str, Enum):
     def from_str(cls, value: str) -> "PaymentType":
         """Normaliza el texto del CSV a un PaymentType. Lanza ValueError si no aplica."""
         key = (value or "").strip().upper()
-        return cls(key)  # lanza ValueError si no existe
+        return cls(key)
 
 
 class RowStatus(str, Enum):
@@ -43,11 +43,12 @@ class CsvRow:
     tipo_pago: PaymentType
     monto: float
     cuenta_destino: str
+    moneda: str = "BOB"            # ISO 4217. Default BOB = moneda local, sin conversion
     cuenta_caja: Optional[str] = None
     cuenta_banco: Optional[str] = None
     codigo_tarjeta: Optional[str] = None
     num_cupon: Optional[str] = None
-    referencia: Optional[str] = None   # ID unico de la transaccion bancaria (idempotencia)
+    referencia: Optional[str] = None
 
 
 @dataclass
@@ -94,7 +95,7 @@ class FileSummary:
     @property
     def all_success(self) -> bool:
         """
-        True si NO hubo ERROR ni OBSERVADO. Las OMITIDA (ya existian en SAP) cuentan
-        como resultado limpio: el archivo se considera procesado correctamente.
+        True si NO hubo ERROR ni OBSERVADO. Las OMITIDA (ya existian en SAP)
+        cuentan como resultado limpio.
         """
         return self.total > 0 and self.errores == 0 and self.observados == 0

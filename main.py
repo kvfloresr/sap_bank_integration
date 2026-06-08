@@ -20,7 +20,7 @@ import time
 
 import yaml
 
-from sap_client import SapClient
+from sap_client import DryRunClient, SapClient
 from watcher import Watcher
 
 
@@ -47,19 +47,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="SAP Bank Statement Integration")
     parser.add_argument("--config", default="config.yaml", help="Ruta al config.yaml")
     parser.add_argument("--once", action="store_true", help="Ejecuta un solo ciclo y termina")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="No inserta en SAP: registra los payloads y deja el archivo en inbound")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     setup_logging(cfg.get("logging", {}))
     log = logging.getLogger("main")
 
-    client = SapClient(cfg["sap"], cfg.get("retry", {}))
+    client = DryRunClient() if args.dry_run else SapClient(cfg["sap"], cfg.get("retry", {}))
     watcher = Watcher(
         paths_cfg=cfg["paths"],
         accounts_cfg=cfg["accounts"],
         max_workers=int(cfg.get("concurrency", {}).get("max_workers", 6)),
         client=client,
         idem_cfg=cfg.get("idempotency", {}),
+        move_files=not args.dry_run,
     )
 
     # Login inicial para fallar rapido si las credenciales/URL estan mal

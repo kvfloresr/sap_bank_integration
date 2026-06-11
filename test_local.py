@@ -1,23 +1,14 @@
 """
 test_local.py
 -------------
-Prueba local del pipeline completo.
+Lee un .xlsx desde paths.inbound, resuelve los codigos de cuentas del Excel
+al formato interno de SAP, mapea centros de costo (ProfitCenter), procesa
+cada fila y genera el reporte de conciliacion.
 
-Lee un archivo .xlsx desde la ruta configurada en config.yaml (paths.inbound),
-lo procesa fila por fila con la logica real del sistema y genera el reporte
-Excel de conciliacion — exactamente igual que en produccion.
-
-Modos de ejecucion:
-    python test_local.py                            # dry-run, sin tocar SAP
-    python test_local.py --sap-real                 # insercion real en SAP
-    python test_local.py --config otra_config.yaml  # config alternativa
-    python test_local.py --xlsx ruta/archivo.xlsx   # archivo especifico
-
-En modo --sap-real:
-    - Hace login contra SAP con las credenciales del config.yaml
-    - Verifica idempotencia (si idem_cfg.enabled=true) antes de cada POST
-    - El reporte mostrara DocEntry y DocNum reales
-    - El archivo se mueve a Procesados/ con timestamp en el nombre
+Modos:
+    python test_local.py                  # dry-run
+    python test_local.py --sap-real       # insercion real
+    python test_local.py --xlsx ruta.xlsx # archivo especifico
 """
 
 from __future__ import annotations
@@ -27,13 +18,14 @@ import logging
 import os
 import shutil
 import sys
-from datetime import date, datetime
+from datetime import datetime
 
 import openpyxl
 import yaml
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+from account_resolver import AccountResolver
 from models import CsvRow, FileSummary, PaymentType, ProcessResult, RowStatus
 from processor import build_payload, parse_row
 from report_writer import write_report
@@ -48,26 +40,18 @@ log = logging.getLogger("test_local")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAPEO: columnas del Excel del banco → dict que espera parse_row()
-#
-# Estructura fija del Excel entregado por el banco:
-#   A (col 0): MODULO SAP       → determina tipo_pago
-#   B (col 1): Código cuenta    → cuenta_caja / cuenta_banco / codigo_tarjeta
-#   C (col 2): Nombre cuenta    → descripcion (Remarks en SAP)
-#   D (col 3): Cuenta asociada  → cuenta_destino (contrapartida contable)
-#   E (col 4): Débito           → monto si la fila es debito  ("BS 10,883.16")
-#   F (col 5): Crédito          → monto si la fila es credito ("BS 10,883.16")
-#   G (col 6): Comentarios      → descripcion adicional / referencia
-#   H (col 7): Unidad Negocio   → no se usa en el payload
-#   I (col 8): Centro de Costo  → no se usa en el payload
-#   J (col 9): Partida Flujo    → no se usa en el payload
-#
-# MONEDA: el Excel del banco no trae moneda explicita. Se asume BOB (moneda
-# local). Si el banco entrega USD u otra moneda, agregar columna "moneda"
-# al Excel y mapearla aqui.
-#
-# CUENTAS: las cuentas del Excel (cuenta_mayor y cuenta_asoc) deben existir
-# en SAP. Si no existen, el sistema usara los defaults del config.yaml.
+# MAPEO de columnas del Excel del banco:
+#   A (0): MODULO SAP        → tipo_pago
+#   B (1): Código cuenta     → cuenta_caja/banco (se resuelve a _SYS)
+#   C (2): Nombre cuenta     → descripcion
+#   D (3): Cuenta asociada   → cuenta_destino (se resuelve a _SYS)
+#   E (4): Débito            → monto
+#   F (5): Crédito           → monto
+#   G (6): Comentarios       → referencia
+#   H (7): Unidad de Negocio → unidad_negocio (referencia)
+#   I (8): Centro de Costo   → centro_costo  → ProfitCenter
+#   J (9): Centro de Costo 2 → centro_costo2 → ProfitCenter2
+#   K (10): Partida Flujo    → se ignora
 # ─────────────────────────────────────────────────────────────────────────────
 
 MODULO_A_TIPO: dict[str, str] = {
@@ -78,7 +62,6 @@ MODULO_A_TIPO: dict[str, str] = {
 
 
 def _parse_bs_amount(raw) -> str:
-    """Convierte 'BS 10,883.16' o 10883.16 a string '10883.16' para parse_row()."""
     if raw is None:
         return ""
     s = str(raw).strip()
@@ -88,162 +71,141 @@ def _parse_bs_amount(raw) -> str:
             break
     s = s.replace(" ", "")
     if "," in s and "." in s:
-        if s.index(",") < s.index("."):
-            s = s.replace(",", "")
-        else:
-            s = s.replace(".", "").replace(",", ".")
+        s = s.replace(",", "") if s.index(",") < s.index(".") \
+            else s.replace(".", "").replace(",", ".")
     elif "," in s:
         s = s.replace(",", ".")
     return s
 
 
-def xlsx_to_raw_rows(xlsx_path: str, accounts_cfg: dict) -> list[dict]:
-    """
-    Lee el Excel del banco y devuelve lista de dicts con las claves que
-    espera parse_row() de processor.py. Salta encabezado y filas vacias.
+def _str(val) -> str:
+    return str(val or "").strip()
 
-    Las cuentas del Excel se usan tal cual. Si vienen vacias, el procesador
-    usara los defaults del config.yaml (cash_account / transfer_account).
-    """
+
+def xlsx_to_raw_rows(xlsx_path, accounts_cfg, resolver) -> list[dict]:
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     ws = wb.active
     rows_out: list[dict] = []
-    #today = date.today().isoformat() 
+
+    # Periodo abierto en TAJIBOS_QA para pruebas.
+    # EN PRODUCCION: from datetime import date; today = date.today().isoformat()
     today = "2026-02-28"
 
-
+    all_codes: list[str] = []
+    raw_data:  list[tuple] = []
     for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
-        if i == 1:
+        if i == 1 or all(c is None for c in row):
             continue
-        if all(c is None for c in row):
-            continue
+        all_codes.extend([_str(row[1]), _str(row[3])])
+        raw_data.append((i, row))
 
-        modulo       = str(row[0] or "").strip()
-        cuenta_mayor = str(row[1] or "").strip()
-        nombre_sn    = str(row[2] or "").strip()
-        cuenta_asoc  = str(row[3] or "").strip()
-        debito_raw   = row[4]
-        credito_raw  = row[5]
-        comentario   = str(row[6] or "").strip()
+    log.info("Resolviendo %s codigos de cuentas contra SAP...", len(set(all_codes)))
+    resolver.resolve_many(all_codes)
 
-        tipo_raw  = MODULO_A_TIPO.get(modulo.lower(), "TRANSFERENCIA")
-        monto_str = _parse_bs_amount(debito_raw) or _parse_bs_amount(credito_raw)
+    for i, row in raw_data:
+        modulo        = _str(row[0])
+        cuenta_mayor  = _str(row[1])
+        nombre_sn     = _str(row[2])
+        cuenta_asoc   = _str(row[3])
+        debito_raw    = row[4]
+        credito_raw   = row[5]
+        comentario    = _str(row[6])
+        unidad_neg    = _str(row[7])   # H: Unidad de Negocio  -> ProfitCenter  (dim 1)
+        centro_costo  = _str(row[8])   # I: Centro de Costo    -> ProfitCenter2 (dim 2)
+        segmento      = _str(row[9]) if len(row) > 9 else ""   # J: Segmento -> ProfitCenter3 (dim 3)
+
+        tipo_raw    = MODULO_A_TIPO.get(modulo.lower(), "TRANSFERENCIA")
+        monto_str   = _parse_bs_amount(debito_raw) or _parse_bs_amount(credito_raw)
         descripcion = comentario or nombre_sn or modulo
 
-        # Si la cuenta del Excel no existe en TAJIBOS_QA, usar el default
-        # del config.yaml segun el tipo de pago. Esto evita el error 400
-        # "Account is invalid" durante las pruebas. En produccion las cuentas
-        # del Excel deben existir en SAP y este fallback no deberia activarse.
-        if tipo_raw == "EFECTIVO" and not cuenta_mayor:
-            cuenta_mayor = accounts_cfg.get("cash_account", "")
-        elif tipo_raw == "TRANSFERENCIA" and not cuenta_mayor:
-            cuenta_mayor = accounts_cfg.get("transfer_account", "")
-
-        # cuenta_destino: si viene del Excel se usa tal cual.
-        # Si no existe en SAP el POST fallara con 400 y quedara como ERROR
-        # en el reporte — comportamiento correcto para produccion.
+        cuenta_mayor_res = resolver.resolve(cuenta_mayor) if cuenta_mayor \
+            else accounts_cfg.get(
+                "cash_account" if tipo_raw == "EFECTIVO" else "transfer_account", ""
+            )
+        cuenta_asoc_res = resolver.resolve(cuenta_asoc) if cuenta_asoc else ""
 
         d: dict = {
             "fecha":          today,
             "descripcion":    descripcion,
             "tipo_pago":      tipo_raw,
             "monto":          monto_str,
-            "cuenta_destino": cuenta_asoc,
-            "moneda":         "BOB",
-            "cuenta_caja":    cuenta_mayor if tipo_raw == "EFECTIVO"      else "",
-            "cuenta_banco":   cuenta_mayor if tipo_raw == "TRANSFERENCIA" else "",
-            "codigo_tarjeta": cuenta_mayor if tipo_raw == "TARJETA"       else "",
+            "cuenta_destino": cuenta_asoc_res,
+            "moneda":         "BS",
+            "cuenta_caja":    cuenta_mayor_res if tipo_raw == "EFECTIVO"      else "",
+            "cuenta_banco":   cuenta_mayor_res if tipo_raw == "TRANSFERENCIA" else "",
+            "codigo_tarjeta": cuenta_mayor_res if tipo_raw == "TARJETA"       else "",
             "num_cupon":      "",
             "referencia":     comentario,
+            "centro_costo":   unidad_neg,     # dim 1 (UNIDAD DE NEGOCIO) -> ProfitCenter
+            "centro_costo2":  centro_costo,   # dim 2 (CENTRO DE COSTO)   -> ProfitCenter2
+            "centro_costo3":  segmento,       # dim 3 (SEGMENTO)          -> ProfitCenter3
+            "unidad_negocio": unidad_neg,
         }
         rows_out.append(d)
-        log.debug("Fila Excel %s -> tipo=%s monto=%s cuenta_mayor=%s destino=%s",
-                i, tipo_raw, monto_str, cuenta_mayor, cuenta_asoc)
+        log.debug(
+            "Fila %s -> tipo=%s monto=%s destino=%s->%s pc1=%s pc2=%s pc3=%s",
+            i, tipo_raw, monto_str, cuenta_asoc, cuenta_asoc_res,
+            unidad_neg, centro_costo, segmento,
+        )
 
     return rows_out
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PIPELINE
-# ─────────────────────────────────────────────────────────────────────────────
-
-def run_pipeline(
-    raw_rows: list[dict],
-    source_name: str,
-    client,
-    accounts_cfg: dict,
-    idem_cfg: dict,
-) -> FileSummary:
-    """
-    Parsea, construye payload y postea cada fila.
-    Identico a process_file() de processor.py pero secuencial (sin pool de
-    hilos) para que el output de consola sea legible durante las pruebas.
-    """
-    summary = FileSummary(source_name=source_name)
+def run_pipeline(raw_rows, source_name, client, accounts_cfg, idem_cfg) -> FileSummary:
+    summary   = FileSummary(source_name=source_name)
     idem_on   = bool(idem_cfg.get("enabled"))
     ref_field = idem_cfg.get("reference_field", "U_RefBanco")
 
     for idx, raw in enumerate(raw_rows, start=2):
-
-        # 1. Parseo
         try:
             csv_row: CsvRow = parse_row(raw, idx)
         except ValueError as exc:
             log.warning("Linea %s -> OBSERVADO: %s", idx, exc)
             summary.results.append(ProcessResult(
-                line_num=idx,
-                status=RowStatus.OBSERVADO,
+                line_num=idx, status=RowStatus.OBSERVADO,
                 cuenta_destino=(raw.get("cuenta_destino") or "").strip(),
                 error=f"Fila invalida: {exc}",
             ))
             continue
 
-        # 2. Idempotencia — solo si esta habilitada en config.yaml
         if idem_on:
             ref_value = csv_row.referencia or csv_row.descripcion
             if ref_value:
                 existing = client.incoming_payment_exists(ref_field, ref_value)
                 if existing is not None:
-                    log.info("Linea %s -> OMITIDA (ya existe DocEntry=%s)", idx, existing)
+                    log.info("Linea %s -> OMITIDA (DocEntry=%s)", idx, existing)
                     summary.results.append(ProcessResult(
-                        line_num=idx,
-                        status=RowStatus.OMITIDA,
+                        line_num=idx, status=RowStatus.OMITIDA,
                         cuenta_destino=csv_row.cuenta_destino,
                         doc_entry=existing,
                         error=f"Ya existe en SAP (DocEntry={existing})",
                     ))
                     continue
 
-        # 3. Construir payload
         payload = build_payload(csv_row, accounts_cfg)
-
-        # Agregar referencia al documento SAP solo si idempotencia esta activa
         if idem_on:
             ref_value = csv_row.referencia or csv_row.descripcion
             if ref_value:
                 payload[ref_field] = ref_value
 
-        log.info("Linea %s | %s | moneda=%s | monto=%.2f | payload OK",
-                idx, csv_row.tipo_pago.value, csv_row.moneda, csv_row.monto)
+        log.info("Linea %s | %s | moneda=%s | monto=%.2f | pc=%s | payload OK",
+                 idx, csv_row.tipo_pago.value, csv_row.moneda,
+                 csv_row.monto, csv_row.centro_costo)
         log.debug("  payload: %s", payload)
 
-        # 4. POST a SAP
         outcome = client.post_incoming_payment(payload)
-
         if outcome.ok:
-            log.info("  -> EXITO (DocEntry=%s, DocNum=%s)", outcome.doc_entry, outcome.doc_num)
+            log.info("  -> EXITO (DocEntry=%s, DocNum=%s)",
+                     outcome.doc_entry, outcome.doc_num)
             summary.results.append(ProcessResult(
-                line_num=idx,
-                status=RowStatus.EXITO,
+                line_num=idx, status=RowStatus.EXITO,
                 cuenta_destino=csv_row.cuenta_destino,
-                doc_entry=outcome.doc_entry,
-                doc_num=outcome.doc_num,
+                doc_entry=outcome.doc_entry, doc_num=outcome.doc_num,
             ))
         else:
             log.error("  -> ERROR HTTP %s: %s", outcome.status_code, outcome.error)
             summary.results.append(ProcessResult(
-                line_num=idx,
-                status=RowStatus.ERROR,
+                line_num=idx, status=RowStatus.ERROR,
                 cuenta_destino=csv_row.cuenta_destino,
                 error=outcome.error,
             ))
@@ -251,20 +213,13 @@ def run_pipeline(
     return summary
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────────────────────────────────────────
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prueba local — SAP Bank Integration")
-    parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--xlsx", default=None,
-                        help="Archivo .xlsx especifico. Sin este flag toma el primero de inbound/")
-    parser.add_argument("--sap-real", action="store_true",
-                        help="Inserta en SAP real. Sin este flag corre en dry-run.")
+    parser = argparse.ArgumentParser(description="SAP Bank Integration — prueba local")
+    parser.add_argument("--config",   default="config.yaml")
+    parser.add_argument("--xlsx",     default=None)
+    parser.add_argument("--sap-real", action="store_true")
     args = parser.parse_args()
 
-    # Cargar config
     with open(args.config, encoding="utf-8") as fh:
         cfg = yaml.safe_load(fh)
 
@@ -275,21 +230,26 @@ def main() -> int:
     processed_dir = cfg["paths"]["processed"]
     errors_dir    = cfg["paths"]["errors"]
 
-    # Cliente SAP
     if args.sap_real:
         client = SapClient(cfg["sap"], cfg.get("retry", {}))
         client.ensure_session()
         log.info("=== MODO SAP REAL — las inserciones son reales ===")
+        resolver = AccountResolver(
+            session=client._session,
+            base_url=cfg["sap"]["base_url"],
+            verify=cfg["sap"].get("verify_ssl", True),
+        )
     else:
         client = DryRunClient()
+        class _NoOpResolver:
+            def resolve(self, code): return code
+            def resolve_many(self, codes): return {c: c for c in codes}
+        resolver = _NoOpResolver()
 
-    # Resolver archivo de entrada
     if args.xlsx:
         xlsx_path = args.xlsx
     else:
-        archivos = sorted(
-            f for f in os.listdir(inbound_dir) if f.lower().endswith(".xlsx")
-        )
+        archivos = sorted(f for f in os.listdir(inbound_dir) if f.lower().endswith(".xlsx"))
         if not archivos:
             log.error("No hay archivos .xlsx en '%s'.", inbound_dir)
             return 1
@@ -302,7 +262,7 @@ def main() -> int:
     source_name = os.path.basename(xlsx_path)
     log.info("=== Leyendo: %s ===", xlsx_path)
 
-    raw_rows = xlsx_to_raw_rows(xlsx_path, accounts_cfg)
+    raw_rows = xlsx_to_raw_rows(xlsx_path, accounts_cfg, resolver)
     if not raw_rows:
         log.warning("El archivo no tiene filas de datos.")
         return 0
@@ -312,16 +272,13 @@ def main() -> int:
 
     summary = run_pipeline(raw_rows, source_name, client, accounts_cfg, idem_cfg)
 
-    # Reporte Excel — se genera siempre
     os.makedirs(reports_dir, exist_ok=True)
     report_path = write_report(summary, reports_dir)
 
-    # Mover archivo solo en modo SAP real
     if args.sap_real:
         base, ext = os.path.splitext(source_name)
         ts        = datetime.now().strftime("%Y%m%d_%H%M%S")
         new_name  = f"{base}_{ts}{ext}"
-
         if summary.all_success:
             os.makedirs(processed_dir, exist_ok=True)
             dest = os.path.join(processed_dir, new_name)
@@ -333,7 +290,6 @@ def main() -> int:
             shutil.move(xlsx_path, dest)
             log.warning("Archivo con incidencias movido a Errores: %s", dest)
 
-    # Resumen en consola
     print("\n" + "=" * 60)
     print(f"  RESULTADO: {'OK' if summary.all_success else 'CON INCIDENCIAS'}")
     print("=" * 60)

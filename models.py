@@ -1,7 +1,7 @@
 """
 models.py
 ---------
-Modelos de dominio: enums y dataclasses que representan una fila del CSV
+Modelos de dominio: enums y dataclasses que representan una fila del Excel
 y el resultado de procesarla. Sin logica de negocio ni I/O.
 """
 
@@ -13,53 +13,55 @@ from typing import Optional
 
 
 class PaymentType(str, Enum):
-    """Medio de pago indicado en la columna tipo_pago del CSV."""
-    EFECTIVO = "EFECTIVO"
-    TARJETA = "TARJETA"
+    EFECTIVO      = "EFECTIVO"
+    TARJETA       = "TARJETA"
     TRANSFERENCIA = "TRANSFERENCIA"
-    OTROS = "OTROS"
+    OTROS         = "OTROS"
 
     @classmethod
     def from_str(cls, value: str) -> "PaymentType":
-        """Normaliza el texto del CSV a un PaymentType. Lanza ValueError si no aplica."""
         key = (value or "").strip().upper()
         return cls(key)
 
 
 class RowStatus(str, Enum):
-    """Estado final de una fila tras intentar procesarla."""
-    EXITO = "EXITO"          # SAP devolvio 201, hay DocEntry
-    ERROR = "ERROR"          # SAP rechazo (400) o se agotaron reintentos (5xx)
-    OBSERVADO = "OBSERVADO"  # la fila no se pudo parsear; no se intento el POST
-    OMITIDA = "OMITIDA"      # ya existia en SAP (idempotencia); no se reposteo
+    EXITO     = "EXITO"
+    ERROR     = "ERROR"
+    OBSERVADO = "OBSERVADO"
+    OMITIDA   = "OMITIDA"
 
 
 @dataclass
 class CsvRow:
-    """Representa una fila valida del CSV, ya parseada y tipada."""
-    line_num: int                  # numero de linea en el archivo (1 = encabezado)
-    fecha: str                     # YYYY-MM-DD
-    descripcion: str
-    tipo_pago: PaymentType
-    monto: float
+    """Representa una fila valida del Excel, ya parseada y tipada."""
+    line_num:       int
+    fecha:          str
+    descripcion:    str
+    tipo_pago:      PaymentType
+    monto:          float
     cuenta_destino: str
-    moneda: str = "BOB"            # ISO 4217. Default BOB = moneda local, sin conversion
-    cuenta_caja: Optional[str] = None
-    cuenta_banco: Optional[str] = None
+    moneda:         str           = "BS"
+    cuenta_caja:    Optional[str] = None
+    cuenta_banco:   Optional[str] = None
     codigo_tarjeta: Optional[str] = None
-    num_cupon: Optional[str] = None
-    referencia: Optional[str] = None
+    num_cupon:      Optional[str] = None
+    referencia:     Optional[str] = None
+    # Centros de costo (ProfitCenter) — hasta 3 niveles segun el Excel.
+    # Mapean a ProfitCenter / ProfitCenter2 / ProfitCenter3 en PaymentAccounts.
+    centro_costo:   Optional[str] = None   # dim 1 (UNIDAD DE NEGOCIO) -> ProfitCenter
+    centro_costo2:  Optional[str] = None   # dim 2 (CENTRO DE COSTO)   -> ProfitCenter2
+    centro_costo3:  Optional[str] = None   # dim 3 (SEGMENTO)          -> ProfitCenter3
+    unidad_negocio: Optional[str] = None   # referencia adicional
 
 
 @dataclass
 class ProcessResult:
-    """Resultado del procesamiento de una fila. Es lo que se vuelca al reporte Excel."""
-    line_num: int
-    status: RowStatus
-    cuenta_destino: str = ""
-    doc_entry: Optional[int] = None
-    doc_num: Optional[int] = None
-    error: str = ""
+    line_num:       int
+    status:         RowStatus
+    cuenta_destino: str           = ""
+    doc_entry:      Optional[int] = None
+    doc_num:        Optional[int] = None
+    error:          str           = ""
 
     @property
     def is_success(self) -> bool:
@@ -68,9 +70,8 @@ class ProcessResult:
 
 @dataclass
 class FileSummary:
-    """Resumen del procesamiento de un archivo completo."""
     source_name: str
-    results: list[ProcessResult] = field(default_factory=list)
+    results:     list[ProcessResult] = field(default_factory=list)
 
     @property
     def total(self) -> int:
@@ -94,8 +95,4 @@ class FileSummary:
 
     @property
     def all_success(self) -> bool:
-        """
-        True si NO hubo ERROR ni OBSERVADO. Las OMITIDA (ya existian en SAP)
-        cuentan como resultado limpio.
-        """
         return self.total > 0 and self.errores == 0 and self.observados == 0

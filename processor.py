@@ -2,16 +2,15 @@
 processor.py
 ------------
 Logica de negocio:
-  - Parse del CSV (UTF-8 BOM, delimitado por ';').
   - Validacion de filas -> OBSERVADO si no se pueden parsear.
   - Construccion del payload JSON de IncomingPayments segun tipo_pago.
-  - Procesamiento del archivo con un pool de hilos acotado (POST individuales).
+  - Procesamiento con pool de hilos acotado (POST individuales).
 
-Nota sobre TARJETA: el documento de diseno usaba "CreditCards"/"CreditCardCode",
-pero el esquema real de Service Layer usa la coleccion PaymentCreditCards y el
-campo CreditCard (entero). Aqui se usan los nombres reales. Valida igual contra
-GET {base_url}/$metadata por si tu version exige campos extra (CardValidUntil,
-CreditAcct, etc.).
+TARJETA usa PaymentCreditCards[].CreditCard (entero).
+
+Centros de costo: si la fila trae centro_costo / centro_costo2, se inyectan
+en PaymentAccounts como ProfitCenter / ProfitCenter2. Esto es obligatorio en
+empresas SAP donde las cuentas de ingreso exigen asignacion de dimension.
 """
 
 from __future__ import annotations
@@ -28,18 +27,18 @@ from sap_client import SapClient
 logger = logging.getLogger(__name__)
 
 REQUIRED_COLUMNS = {"fecha", "descripcion", "tipo_pago", "monto", "cuenta_destino"}
+DEFAULT_CURRENCY  = "BS"
 
 
-# --------------------------------------------------------------------- parsing
+# ----------------------------------------------------------------- parsing
 
 def _parse_monto(raw: str) -> float:
-    """Acepta separador decimal coma o punto. Lanza ValueError si no es numerico."""
     s = (raw or "").strip().replace(" ", "")
     if not s:
         raise ValueError("monto vacio")
-    # Si tiene coma y punto, asumimos punto = miles y coma = decimal (es-BO)
     if "," in s and "." in s:
-        s = s.replace(".", "").replace(",", ".")
+        s = s.replace(".", "").replace(",", ".") if s.index(",") > s.index(".") \
+            else s.replace(",", "")
     else:
         s = s.replace(",", ".")
     try:
@@ -51,14 +50,16 @@ def _parse_monto(raw: str) -> float:
     return value
 
 
+def _parse_moneda(raw: str) -> str:
+    # Acepta el codigo de moneda tal cual lo define SAP (ej: BS, USD, EUR, UFV).
+    # No se valida longitud porque SAP usa codigos propios (ej: 'BS' de 2 letras).
+    s = (raw or "").strip().upper()
+    return s or DEFAULT_CURRENCY
+
+
 def parse_row(raw: dict, line_num: int) -> CsvRow:
-    """
-    Convierte una fila cruda del CSV en un CsvRow tipado.
-    Lanza ValueError con un mensaje descriptivo si la fila es invalida
-    (lo captura process_file y la marca OBSERVADO).
-    """
-    fecha = (raw.get("fecha") or "").strip()
-    descripcion = (raw.get("descripcion") or "").strip()
+    fecha          = (raw.get("fecha")          or "").strip()
+    descripcion    = (raw.get("descripcion")    or "").strip()
     cuenta_destino = (raw.get("cuenta_destino") or "").strip()
 
     if not fecha:
@@ -71,47 +72,67 @@ def parse_row(raw: dict, line_num: int) -> CsvRow:
     except ValueError:
         raise ValueError(f"tipo_pago invalido: '{raw.get('tipo_pago')}'")
 
-    monto = _parse_monto(raw.get("monto", ""))
+    monto  = _parse_monto(raw.get("monto",  ""))
+    moneda = _parse_moneda(raw.get("moneda", ""))
 
     def opt(key: str) -> Optional[str]:
         v = (raw.get(key) or "").strip()
         return v or None
 
     return CsvRow(
-        line_num=line_num,
-        fecha=fecha,
-        descripcion=descripcion,
-        tipo_pago=tipo,
-        monto=monto,
-        cuenta_destino=cuenta_destino,
-        cuenta_caja=opt("cuenta_caja"),
-        cuenta_banco=opt("cuenta_banco"),
-        codigo_tarjeta=opt("codigo_tarjeta"),
-        num_cupon=opt("num_cupon"),
-        referencia=opt("referencia"),
+        line_num       = line_num,
+        fecha          = fecha,
+        descripcion    = descripcion,
+        tipo_pago      = tipo,
+        monto          = monto,
+        cuenta_destino = cuenta_destino,
+        moneda         = moneda,
+        cuenta_caja    = opt("cuenta_caja"),
+        cuenta_banco   = opt("cuenta_banco"),
+        codigo_tarjeta = opt("codigo_tarjeta"),
+        num_cupon      = opt("num_cupon"),
+        referencia     = opt("referencia"),
+        centro_costo   = opt("centro_costo"),
+        centro_costo2  = opt("centro_costo2"),
+        centro_costo3  = opt("centro_costo3"),
+        unidad_negocio = opt("unidad_negocio"),
     )
 
 
-# ------------------------------------------------------------ payload building
+# --------------------------------------------------------- payload building
 
 def build_payload(row: CsvRow, accounts_cfg: dict) -> dict:
     """
-    Construye el JSON de IncomingPayments. La coleccion PaymentAccounts
-    (contrapartida contable) se inyecta SIEMPRE, sin importar el tipo.
+    Construye el JSON de IncomingPayments.
+    - DocCurrency viene del Excel fila por fila.
+    - PaymentAccounts incluye ProfitCenter / ProfitCenter2 si la fila los trae.
     """
-    payload: dict = {
-        "DocDate": row.fecha,
-        "DocType": "rAccount",
-        "Remarks": row.descripcion,
-        "PaymentAccounts": [
-            {"AccountCode": row.cuenta_destino, "SumPaid": row.monto}
-        ],
+    payment_line: dict = {
+        "AccountCode": row.cuenta_destino,
+        "SumPaid":     row.monto,
     }
+    if row.centro_costo:
+        payment_line["ProfitCenter"] = row.centro_costo
+    if row.centro_costo2:
+        payment_line["ProfitCenter2"] = row.centro_costo2
+    if row.centro_costo3:
+        payment_line["ProfitCenter3"] = row.centro_costo3
+
+    payload: dict = {
+        "DocDate":         row.fecha,
+        "DocType":         "rAccount",
+        "Remarks":         row.descripcion,
+        "PaymentAccounts": [payment_line],
+    }
+    # DocCurrency solo se envia si NO es la moneda local.
+    # Para la moneda local, SAP usa la moneda por defecto de la empresa.
+    if row.moneda and row.moneda != DEFAULT_CURRENCY:
+        payload["DocCurrency"] = row.moneda
 
     match row.tipo_pago:
         case PaymentType.EFECTIVO:
             payload["CashAccount"] = row.cuenta_caja or accounts_cfg["cash_account"]
-            payload["CashSum"] = row.monto
+            payload["CashSum"]     = row.monto
 
         case PaymentType.TARJETA:
             try:
@@ -120,9 +141,9 @@ def build_payload(row: CsvRow, accounts_cfg: dict) -> dict:
             except (TypeError, ValueError):
                 credit_card = int(accounts_cfg.get("default_card_code", 1))
 
-            cc_line = {
+            cc_line: dict = {
                 "CreditCard": credit_card,
-                "CreditSum": row.monto,
+                "CreditSum":  row.monto,
             }
             if row.num_cupon:
                 cc_line["VoucherNum"] = row.num_cupon
@@ -133,24 +154,22 @@ def build_payload(row: CsvRow, accounts_cfg: dict) -> dict:
 
         case PaymentType.TRANSFERENCIA | PaymentType.OTROS:
             payload["TransferAccount"] = row.cuenta_banco or accounts_cfg["transfer_account"]
-            payload["TransferSum"] = row.monto
+            payload["TransferSum"]     = row.monto
 
     return payload
 
 
-# ----------------------------------------------------------- file processing
+# --------------------------------------------------------- file processing
 
 def _read_rows(path: str) -> list[dict]:
-    """Lee el CSV con UTF-8 BOM y delimitador ';'. Devuelve lista de dicts."""
-    # utf-8-sig consume automaticamente el BOM si esta presente
     with io.open(path, "r", encoding="utf-8-sig", newline="") as fh:
         reader = csv.DictReader(fh, delimiter=";")
         if reader.fieldnames is None:
             raise ValueError("CSV vacio o sin encabezado")
-        cols = {c.strip() for c in reader.fieldnames}
+        cols    = {c.strip() for c in reader.fieldnames}
         missing = REQUIRED_COLUMNS - cols
         if missing:
-            raise ValueError(f"Faltan columnas requeridas en el encabezado: {sorted(missing)}")
+            raise ValueError(f"Faltan columnas requeridas: {sorted(missing)}")
         return list(reader)
 
 
@@ -160,52 +179,40 @@ def _process_one(
     accounts_cfg: dict,
     idem_cfg: dict,
 ) -> ProcessResult:
-    """Construye el payload y lo postea. Pensado para correr en un hilo del pool.
-
-    Si la idempotencia esta activa y la fila tiene una referencia, primero verifica
-    en SAP si ya existe un documento con esa referencia. Si existe -> OMITIDA (no
-    repostea). Si no existe, inyecta la referencia en el payload antes de insertar.
-    """
-    payload = build_payload(row, accounts_cfg)
-
-    idem_on = bool(idem_cfg.get("enabled"))
+    payload   = build_payload(row, accounts_cfg)
+    idem_on   = bool(idem_cfg.get("enabled"))
     ref_field = idem_cfg.get("reference_field", "U_RefBanco")
-    ref_value = row.referencia or row.descripcion  # clave de deduplicacion
+    ref_value = row.referencia or row.descripcion
 
     if idem_on and ref_value:
-        # Guardar la referencia en el documento para poder deduplicar en el futuro
         payload[ref_field] = ref_value
         existing = client.incoming_payment_exists(ref_field, ref_value)
         if existing is not None:
-            logger.info("Linea %s OMITIDA -> ya existe DocEntry=%s (ref=%s)",
-                        row.line_num, existing, ref_value)
+            logger.info("Linea %s OMITIDA -> ya existe DocEntry=%s", row.line_num, existing)
             return ProcessResult(
-                line_num=row.line_num,
-                status=RowStatus.OMITIDA,
-                cuenta_destino=row.cuenta_destino,
-                doc_entry=existing,
-                error=f"Ya existe en SAP (DocEntry={existing}, {ref_field}={ref_value})",
+                line_num       = row.line_num,
+                status         = RowStatus.OMITIDA,
+                cuenta_destino = row.cuenta_destino,
+                doc_entry      = existing,
+                error          = f"Ya existe en SAP (DocEntry={existing})",
             )
-    elif idem_on and not ref_value:
-        logger.warning("Linea %s sin referencia: se inserta sin chequeo de duplicado.",
-                       row.line_num)
 
     outcome = client.post_incoming_payment(payload)
     if outcome.ok:
         logger.info("Linea %s EXITO -> DocEntry=%s", row.line_num, outcome.doc_entry)
         return ProcessResult(
-            line_num=row.line_num,
-            status=RowStatus.EXITO,
-            cuenta_destino=row.cuenta_destino,
-            doc_entry=outcome.doc_entry,
-            doc_num=outcome.doc_num,
+            line_num       = row.line_num,
+            status         = RowStatus.EXITO,
+            cuenta_destino = row.cuenta_destino,
+            doc_entry      = outcome.doc_entry,
+            doc_num        = outcome.doc_num,
         )
     logger.error("Linea %s ERROR (HTTP %s): %s", row.line_num, outcome.status_code, outcome.error)
     return ProcessResult(
-        line_num=row.line_num,
-        status=RowStatus.ERROR,
-        cuenta_destino=row.cuenta_destino,
-        error=outcome.error,
+        line_num       = row.line_num,
+        status         = RowStatus.ERROR,
+        cuenta_destino = row.cuenta_destino,
+        error          = outcome.error,
     )
 
 
@@ -217,33 +224,23 @@ def process_file(
     max_workers: int,
     idem_cfg: dict | None = None,
 ) -> FileSummary:
-    """
-    Procesa un CSV completo:
-      1. Parsea todas las filas (las invalidas -> OBSERVADO, no se postean).
-      2. Postea las validas en paralelo con un pool acotado (con idempotencia opcional).
-      3. Devuelve el resumen ordenado por numero de linea.
-    """
     idem_cfg = idem_cfg or {}
-    summary = FileSummary(source_name=source_name)
+    summary  = FileSummary(source_name=source_name)
     raw_rows = _read_rows(path)
 
     valid_rows: list[CsvRow] = []
-    # La fila 1 es el encabezado; los datos empiezan en la linea 2.
     for idx, raw in enumerate(raw_rows, start=2):
         try:
             valid_rows.append(parse_row(raw, idx))
         except ValueError as exc:
             logger.warning("Linea %s OBSERVADO: %s", idx, exc)
-            summary.results.append(
-                ProcessResult(
-                    line_num=idx,
-                    status=RowStatus.OBSERVADO,
-                    cuenta_destino=(raw.get("cuenta_destino") or "").strip(),
-                    error=f"Fila invalida: {exc}",
-                )
-            )
+            summary.results.append(ProcessResult(
+                line_num       = idx,
+                status         = RowStatus.OBSERVADO,
+                cuenta_destino = (raw.get("cuenta_destino") or "").strip(),
+                error          = f"Fila invalida: {exc}",
+            ))
 
-    # POST de las filas validas en paralelo
     if valid_rows:
         client.ensure_session()
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -254,8 +251,8 @@ def process_file(
 
     summary.results.sort(key=lambda r: r.line_num)
     logger.info(
-        "Archivo '%s' procesado: %s EXITO, %s ERROR, %s OBSERVADO, %s OMITIDA (total %s)",
-        source_name, summary.exitos, summary.errores, summary.observados,
-        summary.omitidas, summary.total,
+        "Archivo '%s': %s EXITO, %s ERROR, %s OBSERVADO, %s OMITIDA",
+        source_name, summary.exitos, summary.errores,
+        summary.observados, summary.omitidas,
     )
     return summary

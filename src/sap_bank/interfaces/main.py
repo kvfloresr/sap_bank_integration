@@ -1,15 +1,3 @@
-"""
-main.py
--------
-Entry point del daemon. Carga config.yaml, inicializa logging, el cliente SAP
-y el watcher, y entra en el bucle principal con el intervalo configurado.
-
-Uso manual (pruebas):
-    python main.py
-    python main.py --config /ruta/otra_config.yaml
-    python main.py --once      # un solo ciclo y termina (util para cron/pruebas)
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -20,7 +8,7 @@ import time
 
 import yaml
 
-from sap_client import DryRunClient, SapClient
+from src.sap_bank.infrastructure.sap_client import DryRunClient, SapClient
 from watcher import Watcher
 
 

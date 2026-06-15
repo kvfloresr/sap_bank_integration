@@ -1,16 +1,13 @@
 """
-processor.py
-------------
-Logica de negocio:
-  - Validacion de filas -> OBSERVADO si no se pueden parsear.
-  - Construccion del payload JSON de IncomingPayments segun tipo_pago.
-  - Procesamiento con pool de hilos acotado (POST individuales).
+processor.py  (application)
+---------------------------
+Casos de uso: orquesta el dominio y la infraestructura.
+  - parse_row: valida y tipa una fila cruda -> CsvRow (o ValueError -> OBSERVADO).
+  - process_rows: procesa una lista de filas ya leidas (desde Excel o CSV).
+  - process_file: lee un CSV y procesa (compatibilidad con el flujo viejo).
 
-TARJETA usa PaymentCreditCards[].CreditCard (entero).
-
-Centros de costo: si la fila trae centro_costo / centro_costo2, se inyectan
-en PaymentAccounts como ProfitCenter / ProfitCenter2. Esto es obligatorio en
-empresas SAP donde las cuentas de ingreso exigen asignacion de dimension.
+La construccion del payload vive en domain/payment_builder.py (logica pura).
+Este modulo solo coordina: parsear -> construir -> postear -> recolectar.
 """
 
 from __future__ import annotations
@@ -21,13 +18,15 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
-from models import CsvRow, FileSummary, PaymentType, ProcessResult, RowStatus
-from sap_client import SapClient
+from src.sap_bank.domain.models import (
+    CsvRow, FileSummary, PaymentType, ProcessResult, RowStatus,
+)
+from src.sap_bank.domain.payment_builder import build_payload
+from src.sap_bank.infrastructure.sap_client import SapClient
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_COLUMNS = {"fecha", "descripcion", "tipo_pago", "monto", "cuenta_destino"}
-DEFAULT_CURRENCY  = "BS"
+DEFAULT_CURRENCY = "BS"
 
 
 # ----------------------------------------------------------------- parsing
@@ -51,13 +50,12 @@ def _parse_monto(raw: str) -> float:
 
 
 def _parse_moneda(raw: str) -> str:
-    # Acepta el codigo de moneda tal cual lo define SAP (ej: BS, USD, EUR, UFV).
-    # No se valida longitud porque SAP usa codigos propios (ej: 'BS' de 2 letras).
     s = (raw or "").strip().upper()
     return s or DEFAULT_CURRENCY
 
 
 def parse_row(raw: dict, line_num: int) -> CsvRow:
+    """Convierte una fila cruda (dict) en CsvRow tipado. ValueError si invalida."""
     fecha          = (raw.get("fecha")          or "").strip()
     descripcion    = (raw.get("descripcion")    or "").strip()
     cuenta_destino = (raw.get("cuenta_destino") or "").strip()
@@ -96,82 +94,12 @@ def parse_row(raw: dict, line_num: int) -> CsvRow:
         centro_costo2  = opt("centro_costo2"),
         centro_costo3  = opt("centro_costo3"),
         unidad_negocio = opt("unidad_negocio"),
+        glosa          = opt("glosa"),
+        partida_flujo  = opt("partida_flujo"),
     )
 
 
-# --------------------------------------------------------- payload building
-
-def build_payload(row: CsvRow, accounts_cfg: dict) -> dict:
-    """
-    Construye el JSON de IncomingPayments.
-    - DocCurrency viene del Excel fila por fila.
-    - PaymentAccounts incluye ProfitCenter / ProfitCenter2 si la fila los trae.
-    """
-    payment_line: dict = {
-        "AccountCode": row.cuenta_destino,
-        "SumPaid":     row.monto,
-    }
-    if row.centro_costo:
-        payment_line["ProfitCenter"] = row.centro_costo
-    if row.centro_costo2:
-        payment_line["ProfitCenter2"] = row.centro_costo2
-    if row.centro_costo3:
-        payment_line["ProfitCenter3"] = row.centro_costo3
-
-    payload: dict = {
-        "DocDate":         row.fecha,
-        "DocType":         "rAccount",
-        "Remarks":         row.descripcion,
-        "PaymentAccounts": [payment_line],
-    }
-    # DocCurrency solo se envia si NO es la moneda local.
-    # Para la moneda local, SAP usa la moneda por defecto de la empresa.
-    if row.moneda and row.moneda != DEFAULT_CURRENCY:
-        payload["DocCurrency"] = row.moneda
-
-    match row.tipo_pago:
-        case PaymentType.EFECTIVO:
-            payload["CashAccount"] = row.cuenta_caja or accounts_cfg["cash_account"]
-            payload["CashSum"]     = row.monto
-
-        case PaymentType.TARJETA:
-            try:
-                credit_card = int(row.codigo_tarjeta) if row.codigo_tarjeta \
-                    else int(accounts_cfg.get("default_card_code", 1))
-            except (TypeError, ValueError):
-                credit_card = int(accounts_cfg.get("default_card_code", 1))
-
-            cc_line: dict = {
-                "CreditCard": credit_card,
-                "CreditSum":  row.monto,
-            }
-            if row.num_cupon:
-                cc_line["VoucherNum"] = row.num_cupon
-            credit_acct = accounts_cfg.get("credit_card_account")
-            if credit_acct:
-                cc_line["CreditAcct"] = credit_acct
-            payload["PaymentCreditCards"] = [cc_line]
-
-        case PaymentType.TRANSFERENCIA | PaymentType.OTROS:
-            payload["TransferAccount"] = row.cuenta_banco or accounts_cfg["transfer_account"]
-            payload["TransferSum"]     = row.monto
-
-    return payload
-
-
-# --------------------------------------------------------- file processing
-
-def _read_rows(path: str) -> list[dict]:
-    with io.open(path, "r", encoding="utf-8-sig", newline="") as fh:
-        reader = csv.DictReader(fh, delimiter=";")
-        if reader.fieldnames is None:
-            raise ValueError("CSV vacio o sin encabezado")
-        cols    = {c.strip() for c in reader.fieldnames}
-        missing = REQUIRED_COLUMNS - cols
-        if missing:
-            raise ValueError(f"Faltan columnas requeridas: {sorted(missing)}")
-        return list(reader)
-
+# --------------------------------------------------------- procesamiento
 
 def _process_one(
     row: CsvRow,
@@ -216,17 +144,20 @@ def _process_one(
     )
 
 
-def process_file(
-    path: str,
+def process_rows(
+    raw_rows: list[dict],
     source_name: str,
     client: SapClient,
     accounts_cfg: dict,
     max_workers: int,
     idem_cfg: dict | None = None,
 ) -> FileSummary:
+    """
+    Procesa una lista de filas crudas (dicts) ya leidas desde Excel o CSV.
+    Este es el punto de entrada principal que usan tanto la CLI como la web.
+    """
     idem_cfg = idem_cfg or {}
     summary  = FileSummary(source_name=source_name)
-    raw_rows = _read_rows(path)
 
     valid_rows: list[CsvRow] = []
     for idx, raw in enumerate(raw_rows, start=2):

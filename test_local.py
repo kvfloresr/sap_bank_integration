@@ -25,11 +25,11 @@ import yaml
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from account_resolver import AccountResolver
-from models import CsvRow, FileSummary, PaymentType, ProcessResult, RowStatus
-from processor import build_payload, parse_row
-from report_writer import write_report
-from sap_client import DryRunClient, SapClient
+from src.sap_bank.application.account_resolver import AccountResolver
+from src.sap_bank.domain.models import CsvRow, FileSummary, PaymentType, ProcessResult, RowStatus
+from src.sap_bank.application.processor import build_payload, parse_row
+from src.sap_bank.infrastructure.report_writer import write_report
+from src.sap_bank.infrastructure.sap_client import DryRunClient, SapClient
 
 logging.basicConfig(
     level=logging.DEBUG,

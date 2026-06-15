@@ -1,3 +1,4 @@
 requests>=2.31
 openpyxl>=3.1
 pyyaml>=6.0
+Flask>=3.0

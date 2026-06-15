@@ -1,6 +1,6 @@
 """
-models.py
----------
+models.py  (domain)
+-------------------
 Modelos de dominio: enums y dataclasses que representan una fila del Excel
 y el resultado de procesarla. Sin logica de negocio ni I/O.
 """
@@ -20,8 +20,22 @@ class PaymentType(str, Enum):
 
     @classmethod
     def from_str(cls, value: str) -> "PaymentType":
+        """
+        Normaliza el texto del Excel a un PaymentType.
+        Acepta variantes: 'Transferencia' -> TRANSFERENCIA, 'Efectivo' -> EFECTIVO, etc.
+        """
         key = (value or "").strip().upper()
-        return cls(key)
+        # Mapeo de sinonimos comunes del Excel
+        alias = {
+            "TRANSFERENCIA":        "TRANSFERENCIA",
+            "TRANSFER":             "TRANSFERENCIA",
+            "TRANSFERENCIA BANCARIA": "TRANSFERENCIA",
+            "EFECTIVO":             "EFECTIVO",
+            "TARJETA":              "TARJETA",
+            "OTROS":                "OTROS",
+        }
+        normalized = alias.get(key, key)
+        return cls(normalized)
 
 
 class RowStatus(str, Enum):
@@ -35,23 +49,23 @@ class RowStatus(str, Enum):
 class CsvRow:
     """Representa una fila valida del Excel, ya parseada y tipada."""
     line_num:       int
-    fecha:          str
-    descripcion:    str
+    fecha:          str            # YYYY-MM-DD (viene de la columna Fecha del Excel)
+    descripcion:    str            # Comentarios -> Remarks en SAP
     tipo_pago:      PaymentType
     monto:          float
-    cuenta_destino: str
+    cuenta_destino: str            # Cuenta asociada -> PaymentAccounts.AccountCode
     moneda:         str           = "BS"
     cuenta_caja:    Optional[str] = None
-    cuenta_banco:   Optional[str] = None
+    cuenta_banco:   Optional[str] = None   # Cuenta de mayor -> TransferAccount
     codigo_tarjeta: Optional[str] = None
     num_cupon:      Optional[str] = None
-    referencia:     Optional[str] = None
-    # Centros de costo (ProfitCenter) — hasta 3 niveles segun el Excel.
-    # Mapean a ProfitCenter / ProfitCenter2 / ProfitCenter3 en PaymentAccounts.
-    centro_costo:   Optional[str] = None   # dim 1 (UNIDAD DE NEGOCIO) -> ProfitCenter
-    centro_costo2:  Optional[str] = None   # dim 2 (CENTRO DE COSTO)   -> ProfitCenter2
-    centro_costo3:  Optional[str] = None   # dim 3 (SEGMENTO)          -> ProfitCenter3
+    referencia:     Optional[str] = None   # columna Referencia (no se usa si idem off)
+    centro_costo:   Optional[str] = None   # dim 1 (UNIDAD NEGOCIO) -> ProfitCenter
+    centro_costo2:  Optional[str] = None   # dim 2 (CENTRO COSTO)   -> ProfitCenter2
+    centro_costo3:  Optional[str] = None   # dim 3 (SEGMENTO)       -> ProfitCenter3
     unidad_negocio: Optional[str] = None   # referencia adicional
+    glosa:          Optional[str] = None   # columna Glosa (informativa)
+    partida_flujo:  Optional[str] = None   # columna Partida Flujo (informativa)
 
 
 @dataclass

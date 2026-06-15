@@ -15,7 +15,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from models import FileSummary, RowStatus
+from src.sap_bank.domain.models import FileSummary, RowStatus
 
 logger = logging.getLogger(__name__)
 

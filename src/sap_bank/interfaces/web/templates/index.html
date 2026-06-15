@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pagos Recibidos · Carga a SAP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+    <!-- Encabezado -->
+    <header class="masthead">
+    <div class="masthead__brand">
+        <span class="masthead__mark">↳</span>
+        <div>
+        <h1>Pagos Recibidos</h1>
+        <p class="masthead__sub">Carga de transferencias bancarias a SAP Business One</p>
+        </div>
+    </div>
+    <div class="masthead__env" id="envBadge">
+        <span class="dot"></span>
+        <span id="envLabel">Simulación</span>
+    </div>
+    </header>
+
+    <!-- Pasos -->
+    <nav class="steps" aria-label="Progreso">
+    <span class="step is-active" data-step="1"><b>01</b> Cargar archivo</span>
+    <span class="step" data-step="2"><b>02</b> Revisar</span>
+    <span class="step" data-step="3"><b>03</b> Resultado</span>
+    </nav>
+
+    <!-- PASO 1: Carga -->
+    <section class="panel" id="panel-upload">
+    <div class="dropzone" id="dropzone" tabindex="0" role="button"
+        aria-label="Soltar archivo Excel o hacer clic para seleccionar">
+        <input type="file" id="fileInput" accept=".xlsx" hidden>
+        <div class="dropzone__inner">
+        <div class="dropzone__icon">⊕</div>
+        <p class="dropzone__title">Soltá el archivo Excel acá</p>
+        <p class="dropzone__hint">o hacé clic para buscarlo · formato .xlsx</p>
+        </div>
+    </div>
+    <p class="filehint">
+        El archivo debe seguir el formato de registro: módulo, fecha, cuentas,
+        monto, dimensiones y tipo. Las filas sin monto o sin cuenta se ignoran.
+    </p>
+    </section>
+
+    <!-- PASO 2: Previsualización -->
+    <section class="panel is-hidden" id="panel-preview">
+    <div class="panel__head">
+        <div>
+        <h2 id="previewFileName">archivo.xlsx</h2>
+        <p class="panel__meta" id="previewMeta"></p>
+        </div>
+        <button class="btn btn--ghost" id="btnReset">Cambiar archivo</button>
+    </div>
+
+    <div class="summary" id="previewSummary"></div>
+
+    <div class="tablewrap">
+        <table class="grid" id="previewTable">
+        <thead>
+            <tr>
+            <th>Línea</th><th>Fecha</th><th>Tipo</th>
+            <th class="num">Monto</th><th>Cuenta banco</th>
+            <th>Cuenta destino</th><th>C. Costo</th><th>Descripción</th><th>Estado</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="actions">
+        <label class="toggle">
+        <input type="checkbox" id="sapRealToggle">
+        <span class="toggle__track"><span class="toggle__thumb"></span></span>
+        <span class="toggle__label">Insertar en SAP real</span>
+        </label>
+        <button class="btn btn--primary" id="btnProcess">
+        <span class="btn__text">Procesar pagos</span>
+        </button>
+    </div>
+    </section>
+
+    <!-- PASO 3: Resultado -->
+    <section class="panel is-hidden" id="panel-result">
+    <div class="panel__head">
+        <div>
+        <h2 id="resultTitle">Resultado</h2>
+        <p class="panel__meta" id="resultMode"></p>
+        </div>
+        <div class="panel__head-actions">
+        <button class="btn btn--ghost" id="btnDownload">Descargar reporte</button>
+        <button class="btn btn--primary" id="btnNew">Cargar otro archivo</button>
+        </div>
+    </div>
+
+    <div class="summary" id="resultSummary"></div>
+
+    <div class="tablewrap">
+        <table class="grid" id="resultTable">
+        <thead>
+            <tr>
+            <th>Línea</th><th>Estado</th><th class="num">DocEntry</th>
+            <th class="num">DocNum</th><th>Cuenta</th><th>Detalle</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+        </table>
+    </div>
+    </section>
+
+    <!-- Overlay de carga -->
+    <div class="overlay is-hidden" id="overlay">
+    <div class="overlay__box">
+        <div class="spinner"></div>
+        <p id="overlayText">Procesando…</p>
+    </div>
+    </div>
+
+    <!-- Toast de error -->
+    <div class="toast is-hidden" id="toast" role="alert"></div>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

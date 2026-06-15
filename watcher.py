@@ -14,9 +14,9 @@ import os
 import shutil
 from datetime import datetime
 
-import processor
-import report_writer
-from sap_client import SapClient
+import src.sap_bank.application.processor as processor
+import src.sap_bank.infrastructure.report_writer as report_writer
+from src.sap_bank.infrastructure.sap_client import SapClient
 
 logger = logging.getLogger(__name__)
 

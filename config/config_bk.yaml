@@ -1,25 +1,10 @@
-# ============================================================
-# config_bk.yaml — Configuracion para Burger King (Bolivian Foods)
-# ============================================================
-# IMPORTANTE: Este es un ambiente de PRODUCCION. Probar SIEMPRE en
-# dry-run antes de insertar en real.
-#
-# Uso:
-#   Dry-run (no inserta nada, solo muestra que haria):
-#     python -m src.sap_bank.interfaces.cli --config config\config_bk.yaml
-#
-#   Real (inserta de verdad — usar solo tras validar el dry-run):
-#     python -m src.sap_bank.interfaces.cli --sap-real --config config\config_bk.yaml
-# ============================================================
-
 sap:
   # >>> FALTA COMPLETAR: pegar la IP del servidor SAP de Burger King <<<
-  # Debe verse asi: https://LA.IP.DE.BK:50000/b1s/v1
   base_url: "https://52.254.106.101:50000/b1s/v1"
-  company_db: "BOLIVIAN_FOODS_PROD"
+  company_db: "BF_TESTINT"
   username: "INTSALAR"
   password: "z+Y&LR8a"
-  verify_ssl: false          # certificado auto-firmado, igual que TAJIBOS
+  verify_ssl: false          
   session_timeout_minutes: 30
 
 paths:

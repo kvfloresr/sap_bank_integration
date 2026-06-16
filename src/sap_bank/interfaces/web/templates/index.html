@@ -11,6 +11,7 @@
 </head>
 <body>
 <div class="app">
+
     <!-- Encabezado -->
     <header class="masthead">
     <div class="masthead__brand">
@@ -35,6 +36,27 @@
 
     <!-- PASO 1: Carga -->
     <section class="panel" id="panel-upload">
+
+    <!-- Selector de empresa -->
+    <div class="empresa-selector">
+        <p class="empresa-selector__label">Empresa destino</p>
+        <div class="empresa-cards" id="empresaCards">
+        {% for emp in empresas %}
+        <label class="empresa-card">
+            <input type="radio" name="empresa" value="{{ emp.id }}"
+                {% if loop.first %}checked{% endif %}>
+            <span class="empresa-card__inner">
+            <span class="empresa-card__check">✓</span>
+            <span class="empresa-card__name">{{ emp.nombre }}</span>
+            </span>
+        </label>
+        {% endfor %}
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Dropzone -->
     <div class="dropzone" id="dropzone" tabindex="0" role="button"
         aria-label="Soltar archivo Excel o hacer clic para seleccionar">
         <input type="file" id="fileInput" accept=".xlsx" hidden>
@@ -60,6 +82,8 @@
         <button class="btn btn--ghost" id="btnReset">Cambiar archivo</button>
     </div>
 
+    <div class="empresa-badge" id="previewEmpresa"></div>
+
     <div class="summary" id="previewSummary"></div>
 
     <div class="tablewrap">
@@ -67,8 +91,9 @@
         <thead>
             <tr>
             <th>Línea</th><th>Fecha</th><th>Tipo</th>
-            <th class="num">Monto</th><th>Cuenta banco</th>
-            <th>Cuenta destino</th><th>C. Costo</th><th>Descripción</th><th>Estado</th>
+            <th class="num">Monto</th><th>Cta. banco</th>
+            <th>Cta. destino</th><th>C. Costo</th>
+            <th>Descripción</th><th>Estado</th>
             </tr>
         </thead>
         <tbody></tbody>
@@ -82,7 +107,7 @@
         <span class="toggle__label">Insertar en SAP real</span>
         </label>
         <button class="btn btn--primary" id="btnProcess">
-        <span class="btn__text">Procesar pagos</span>
+        Procesar pagos
         </button>
     </div>
     </section>
@@ -100,6 +125,7 @@
         </div>
     </div>
 
+    <div class="empresa-badge" id="resultEmpresa"></div>
     <div class="summary" id="resultSummary"></div>
 
     <div class="tablewrap">

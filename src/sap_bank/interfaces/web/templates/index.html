@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pagos Recibidos · Carga a SAP</title>
+<title>Pagos Recibidos · SAP Business One</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -12,147 +12,162 @@
 <body>
 <div class="app">
 
-    <!-- Encabezado -->
-    <header class="masthead">
+<!-- Encabezado -->
+<header class="masthead">
     <div class="masthead__brand">
-        <span class="masthead__mark">↳</span>
-        <div>
+    <div class="masthead__logo">PR</div>
+    <div>
         <h1>Pagos Recibidos</h1>
-        <p class="masthead__sub">Carga de transferencias bancarias a SAP Business One</p>
-        </div>
+        <p class="masthead__sub">Carga de transferencias bancarias · SAP Business One</p>
     </div>
-    <div class="masthead__env" id="envBadge">
-        <span class="dot"></span>
-        <span id="envLabel">Simulación</span>
     </div>
-    </header>
-
-    <!-- Pasos -->
     <nav class="steps" aria-label="Progreso">
-    <span class="step is-active" data-step="1"><b>01</b> Cargar archivo</span>
+    <span class="step is-active" data-step="1"><b>01</b> Cargar</span>
+    <span class="step__sep"></span>
     <span class="step" data-step="2"><b>02</b> Revisar</span>
+    <span class="step__sep"></span>
     <span class="step" data-step="3"><b>03</b> Resultado</span>
     </nav>
+</header>
 
-    <!-- PASO 1: Carga -->
-    <section class="panel" id="panel-upload">
+<!-- PASO 1: Carga -->
+<section class="panel" id="panel-upload">
+    <div class="panel__intro">
+    <h2>Seleccionar empresa y archivo</h2>
+    <p>Elige la empresa destino en SAP y sube el Excel de transferencias bancarias.</p>
+    </div>
 
-    <!-- Selector de empresa -->
     <div class="empresa-selector">
-        <p class="empresa-selector__label">Empresa destino</p>
-        <div class="empresa-cards" id="empresaCards">
+    <p class="empresa-selector__label">Empresa destino</p>
+    <div class="empresa-cards" id="empresaCards">
         {% for emp in empresas %}
         <label class="empresa-card">
-            <input type="radio" name="empresa" value="{{ emp.id }}"
-                {% if loop.first %}checked{% endif %}>
-            <span class="empresa-card__inner">
-            <span class="empresa-card__check">✓</span>
+        <input type="radio" name="empresa" value="{{ emp.id }}"
+            {% if loop.first %}checked{% endif %}>
+        <span class="empresa-card__inner">
+            <span class="empresa-card__dot"></span>
             <span class="empresa-card__name">{{ emp.nombre }}</span>
-            </span>
+            <span class="empresa-card__check">✓</span>
+        </span>
         </label>
         {% endfor %}
-        </div>
+    </div>
     </div>
 
-    <div class="divider"></div>
-
-    <!-- Dropzone -->
     <div class="dropzone" id="dropzone" tabindex="0" role="button"
         aria-label="Soltar archivo Excel o hacer clic para seleccionar">
-        <input type="file" id="fileInput" accept=".xlsx" hidden>
-        <div class="dropzone__inner">
-        <div class="dropzone__icon">⊕</div>
-        <p class="dropzone__title">Soltá el archivo Excel acá</p>
-        <p class="dropzone__hint">o hacé clic para buscarlo · formato .xlsx</p>
+    <input type="file" id="fileInput" accept=".xlsx" hidden>
+    <div class="dropzone__inner">
+        <div class="dropzone__icon">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <path d="M16 4v16M10 12l6-8 6 8M6 26h20" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        </div>
+        <div>
+        <p class="dropzone__title">Suelta el archivo Excel acá</p>
+        <p class="dropzone__hint">o haz clic para buscarlo · solo .xlsx</p>
         </div>
     </div>
-    <p class="filehint">
-        El archivo debe seguir el formato de registro: módulo, fecha, cuentas,
-        monto, dimensiones y tipo. Las filas sin monto o sin cuenta se ignoran.
-    </p>
-    </section>
+    <div class="dropzone__footer">
+        Formato: módulo · fecha · cuentas · crédito · dimensiones · tipo.
+        Las filas sin monto o sin cuenta se ignoran automáticamente.
+    </div>
+    </div>
+</section>
 
-    <!-- PASO 2: Previsualización -->
-    <section class="panel is-hidden" id="panel-preview">
+<!-- PASO 2: Previsualización -->
+<section class="panel is-hidden" id="panel-preview">
     <div class="panel__head">
-        <div>
+    <div>
         <h2 id="previewFileName">archivo.xlsx</h2>
         <p class="panel__meta" id="previewMeta"></p>
-        </div>
-        <button class="btn btn--ghost" id="btnReset">Cambiar archivo</button>
+    </div>
+    <button class="btn btn--ghost" id="btnReset">← Cambiar archivo</button>
     </div>
 
     <div class="empresa-badge" id="previewEmpresa"></div>
-
     <div class="summary" id="previewSummary"></div>
 
     <div class="tablewrap">
-        <table class="grid" id="previewTable">
+    <table class="grid" id="previewTable">
         <thead>
-            <tr>
-            <th>Línea</th><th>Fecha</th><th>Tipo</th>
+        <tr>
+            <th>#</th><th>Fecha</th><th>Tipo</th>
             <th class="num">Monto</th><th>Cta. banco</th>
             <th>Cta. destino</th><th>C. Costo</th>
             <th>Descripción</th><th>Estado</th>
-            </tr>
+        </tr>
         </thead>
         <tbody></tbody>
-        </table>
+    </table>
     </div>
 
     <div class="actions">
-        <label class="toggle">
-        <input type="checkbox" id="sapRealToggle">
-        <span class="toggle__track"><span class="toggle__thumb"></span></span>
-        <span class="toggle__label">Insertar en SAP real</span>
-        </label>
-        <button class="btn btn--primary" id="btnProcess">
-        Procesar pagos
-        </button>
+    <p class="actions__note" id="actionNote"></p>
+    <button class="btn btn--primary btn--confirm" id="btnProcess">
+        Insertar en SAP
+    </button>
     </div>
-    </section>
+</section>
 
-    <!-- PASO 3: Resultado -->
-    <section class="panel is-hidden" id="panel-result">
+<!-- PASO 3: Resultado -->
+<section class="panel is-hidden" id="panel-result">
     <div class="panel__head">
-        <div>
+    <div>
         <h2 id="resultTitle">Resultado</h2>
         <p class="panel__meta" id="resultMode"></p>
-        </div>
-        <div class="panel__head-actions">
-        <button class="btn btn--ghost" id="btnDownload">Descargar reporte</button>
-        <button class="btn btn--primary" id="btnNew">Cargar otro archivo</button>
-        </div>
+    </div>
+    <div class="panel__actions">
+        <button class="btn btn--ghost" id="btnDownload">↓ Descargar reporte</button>
+        <button class="btn btn--primary" id="btnNew">Nueva carga</button>
+    </div>
     </div>
 
     <div class="empresa-badge" id="resultEmpresa"></div>
     <div class="summary" id="resultSummary"></div>
 
     <div class="tablewrap">
-        <table class="grid" id="resultTable">
+    <table class="grid" id="resultTable">
         <thead>
-            <tr>
-            <th>Línea</th><th>Estado</th><th class="num">DocEntry</th>
-            <th class="num">DocNum</th><th>Cuenta</th><th>Detalle</th>
-            </tr>
+        <tr>
+            <th>#</th><th>Estado</th>
+            <th class="num">DocEntry</th><th class="num">DocNum</th>
+            <th>Cuenta</th><th>Detalle</th>
+        </tr>
         </thead>
         <tbody></tbody>
-        </table>
+    </table>
     </div>
-    </section>
+</section>
 
-    <!-- Overlay de carga -->
-    <div class="overlay is-hidden" id="overlay">
+<!-- Overlay de carga -->
+<div class="overlay is-hidden" id="overlay">
     <div class="overlay__box">
-        <div class="spinner"></div>
-        <p id="overlayText">Procesando…</p>
+    <div class="overlay__ring"></div>
+    <p id="overlayText">Procesando…</p>
+    <p class="overlay__sub">No cerres esta ventana</p>
     </div>
-    </div>
-
-    <!-- Toast de error -->
-    <div class="toast is-hidden" id="toast" role="alert"></div>
 </div>
 
+<!-- Toast -->
+<div class="toast is-hidden" id="toast" role="alert"></div>
+
+<!-- Modal de confirmación -->
+<div class="modal is-hidden" id="modal">
+    <div class="modal__backdrop"></div>
+    <div class="modal__card">
+    <div class="modal__warn">!</div>
+    <h3 class="modal__title">Confirmar inserción en SAP</h3>
+    <p class="modal__body" id="modalBody"></p>
+    <div class="modal__btns">
+        <button class="btn btn--ghost" id="modalCancel">Cancelar</button>
+        <button class="btn btn--danger" id="modalConfirm">Sí, insertar en SAP</button>
+    </div>
+    </div>
+</div>
+
+</div>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

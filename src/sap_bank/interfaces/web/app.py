@@ -1,10 +1,3 @@
-"""
-app.py  (interfaces/web)
-------------------------
-Servidor web Flask para carga manual de pagos recibidos a SAP.
-Soporta multiples empresas — el usuario elige cual en la interfaz.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -30,17 +23,14 @@ logging.basicConfig(
 )
 log = logging.getLogger("web")
 
-# ── Empresas disponibles ───────────────────────────────────────────────────
-# Cada entrada mapea un ID legible a su config.yaml.
-# Para agregar una empresa nueva: agregar una entrada aqui y crear el config.
 EMPRESAS = {
     "lth": {
-        "nombre":  "La Terraza Hotel (TAJIBOS_QA)",
-        "config":  "config/config.yaml",
+        "nombre":  "Los Tajibos",
+        "config":  "config/config_lth_docker.yaml",
     },
     "bk": {
-        "nombre":  "Burger King (BOLIVIAN_FOODS_PROD)",
-        "config":  "config/config_bk.yaml",
+        "nombre":  "Bolivian Foods",
+        "config":  "config/config_bk_docker.yaml",
     },
 }
 

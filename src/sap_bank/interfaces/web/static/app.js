@@ -1,8 +1,3 @@
-/* ============================================================
-Pagos Recibidos · lógica de la interfaz
-Soporta múltiples empresas (TAJIBOS / Burger King)
-============================================================ */
-
 const $ = (sel) => document.querySelector(sel);
 
 const dropzone   = $("#dropzone");
@@ -10,15 +5,18 @@ const fileInput  = $("#fileInput");
 const overlay    = $("#overlay");
 const overlayTxt = $("#overlayText");
 const toast      = $("#toast");
+const modal      = $("#modal");
 
 const panelUpload  = $("#panel-upload");
 const panelPreview = $("#panel-preview");
 const panelResult  = $("#panel-result");
 
 const fmtMoney = (n) =>
-new Intl.NumberFormat("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+new Intl.NumberFormat("es-BO", {
+    minimumFractionDigits: 2, maximumFractionDigits: 2
+}).format(n);
 
-// ── Helpers de UI ────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────
 function showToast(msg, isError = true) {
 toast.textContent = msg;
 toast.classList.toggle("is-error", isError);
@@ -26,8 +24,17 @@ toast.classList.remove("is-hidden");
 setTimeout(() => toast.classList.add("is-hidden"), 4500);
 }
 
-function showOverlay(text) { overlayTxt.textContent = text; overlay.classList.remove("is-hidden"); }
-function hideOverlay()      { overlay.classList.add("is-hidden"); }
+function showOverlay(text) {
+overlayTxt.textContent = text;
+overlay.classList.remove("is-hidden");
+}
+function hideOverlay() { overlay.classList.add("is-hidden"); }
+
+function showModal(body) {
+$("#modalBody").textContent = body;
+modal.classList.remove("is-hidden");
+}
+function hideModal() { modal.classList.add("is-hidden"); }
 
 function setStep(n) {
 document.querySelectorAll(".step").forEach((s) => {
@@ -38,7 +45,9 @@ document.querySelectorAll(".step").forEach((s) => {
 }
 
 function showPanel(panel) {
-[panelUpload, panelPreview, panelResult].forEach((p) => p.classList.add("is-hidden"));
+[panelUpload, panelPreview, panelResult].forEach((p) =>
+    p.classList.add("is-hidden")
+);
 panel.classList.remove("is-hidden");
 }
 
@@ -47,33 +56,36 @@ const checked = document.querySelector('input[name="empresa"]:checked');
 return checked ? checked.value : "lth";
 }
 
-// ── Toggle SAP real ──────────────────────────────────────────
-const sapToggle = $("#sapRealToggle");
-const envBadge  = $("#envBadge");
-const envLabel  = $("#envLabel");
-
-sapToggle?.addEventListener("change", () => {
-const real = sapToggle.checked;
-envBadge.classList.toggle("is-real", real);
-envLabel.textContent = real ? "SAP real" : "Simulación";
+// ── Modal de confirmación ─────────────────────────────────────
+$("#modalCancel").addEventListener("click", hideModal);
+$("#modalConfirm").addEventListener("click", () => {
+hideModal();
+ejecutarInsercion();
 });
 
-// ── Drag & drop / click ──────────────────────────────────────
+// ── Drag & drop / click ───────────────────────────────────────
 dropzone.addEventListener("click", () => fileInput.click());
 dropzone.addEventListener("keydown", (e) => {
 if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
 });
-
 ["dragover", "dragenter"].forEach((ev) =>
-dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add("is-drag"); })
+dropzone.addEventListener(ev, (e) => {
+    e.preventDefault(); dropzone.classList.add("is-drag");
+})
 );
 ["dragleave", "drop"].forEach((ev) =>
-dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove("is-drag"); })
+dropzone.addEventListener(ev, (e) => {
+    e.preventDefault(); dropzone.classList.remove("is-drag");
+})
 );
-dropzone.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]); });
-fileInput.addEventListener("change", () => { if (fileInput.files[0]) uploadFile(fileInput.files[0]); });
+dropzone.addEventListener("drop", (e) => {
+if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", () => {
+if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+});
 
-// ── Previsualización ─────────────────────────────────────────
+// ── Subir y previsualizar ─────────────────────────────────────
 async function uploadFile(file) {
 if (!file.name.toLowerCase().endsWith(".xlsx")) {
     showToast("El archivo debe ser .xlsx");
@@ -105,20 +117,34 @@ try {
 function renderPreview(data) {
 $("#previewFileName").textContent = data.file_name;
 $("#previewMeta").textContent =
-    `${data.total} fila${data.total !== 1 ? "s" : ""} detectada${data.total !== 1 ? "s" : ""}`;
+    `${data.total} fila${data.total !== 1 ? "s" : ""} detectadas`;
 
-$("#previewEmpresa").textContent = `↳ ${data.empresa}`;
+$("#previewEmpresa").textContent = data.empresa;
 
 $("#previewSummary").innerHTML = `
-    <div class="chip ok"><div class="chip__val">${data.validas}</div><div class="chip__lbl">Válidas</div></div>
+    <div class="chip ok">
+    <div class="chip__val">${data.validas}</div>
+    <div class="chip__lbl">Válidas</div>
+    </div>
     <div class="chip ${data.invalidas ? "err" : ""}">
-    <div class="chip__val">${data.invalidas}</div><div class="chip__lbl">Con problemas</div>
+    <div class="chip__val">${data.invalidas}</div>
+    <div class="chip__lbl">Con problemas</div>
     </div>
     <div class="chip">
     <div class="chip__val">${fmtMoney(data.total_monto)}</div>
-    <div class="chip__lbl">Monto total (Bs)</div>
+    <div class="chip__lbl">Monto total Bs</div>
     </div>
 `;
+
+// Nota en action bar
+const note = $("#actionNote");
+if (note) {
+    if (data.invalidas > 0) {
+    note.textContent = `${data.validas} fila${data.validas !== 1 ? "s" : ""} se insertarán. ${data.invalidas} con problemas se omitirán.`;
+    } else {
+    note.textContent = `${data.validas} fila${data.validas !== 1 ? "s" : ""} listas para insertar en SAP.`;
+    }
+}
 
 const tbody = $("#previewTable tbody");
 tbody.innerHTML = data.rows.map((r) => `
@@ -139,18 +165,21 @@ tbody.innerHTML = data.rows.map((r) => `
 `).join("");
 }
 
-// ── Procesar ─────────────────────────────────────────────────
-$("#btnProcess").addEventListener("click", async () => {
-const real = sapToggle.checked;
-if (real && !confirm("Vas a insertar los pagos en SAP REAL. ¿Confirmás?")) return;
+// ── Botón procesar → mostrar modal primero ────────────────────
+$("#btnProcess").addEventListener("click", () => {
+const meta = $("#previewMeta").textContent;
+const note = $("#actionNote")?.textContent || "";
+showModal(`${note}\n\nEsta acción no se puede deshacer.`);
+});
 
-showOverlay(real ? "Insertando pagos en SAP…" : "Simulando inserción…");
+async function ejecutarInsercion() {
+showOverlay("Insertando pagos en SAP…");
 
 try {
-    const res  = await fetch("/api/process", {
+    const res = await fetch("/api/process", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sap_real: real }),
+    body: JSON.stringify({ sap_real: true }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Error al procesar");
@@ -162,27 +191,32 @@ try {
 } finally {
     hideOverlay();
 }
-});
+}
 
 function renderResult(data) {
-$("#resultTitle").textContent = data.resultado === "OK"
+const ok = data.resultado === "OK";
+$("#resultTitle").textContent = ok
     ? "Procesado correctamente"
     : "Procesado con incidencias";
-$("#resultMode").textContent = `Modo: ${data.modo}`;
-$("#resultEmpresa").textContent = `↳ ${data.empresa}`;
+$("#resultMode").textContent = `${data.empresa} · ${data.total} filas procesadas`;
+$("#resultEmpresa").textContent = data.empresa;
 
 $("#resultSummary").innerHTML = `
     <div class="chip ok">
-    <div class="chip__val">${data.exitos}</div><div class="chip__lbl">Éxito</div>
+    <div class="chip__val">${data.exitos}</div>
+    <div class="chip__lbl">Éxito</div>
     </div>
     <div class="chip ${data.errores ? "err" : ""}">
-    <div class="chip__val">${data.errores}</div><div class="chip__lbl">Error</div>
+    <div class="chip__val">${data.errores}</div>
+    <div class="chip__lbl">Error</div>
     </div>
     <div class="chip ${data.observados ? "warn" : ""}">
-    <div class="chip__val">${data.observados}</div><div class="chip__lbl">Observado</div>
+    <div class="chip__val">${data.observados}</div>
+    <div class="chip__lbl">Observado</div>
     </div>
     <div class="chip ${data.omitidas ? "skip" : ""}">
-    <div class="chip__val">${data.omitidas}</div><div class="chip__lbl">Omitido</div>
+    <div class="chip__val">${data.omitidas}</div>
+    <div class="chip__lbl">Omitido</div>
     </div>
 `;
 
@@ -191,16 +225,18 @@ tbody.innerHTML = data.resultados.map((r) => `
     <tr>
     <td class="num">${r.linea}</td>
     <td><span class="badge ${r.estado}">${r.estado}</span></td>
-    <td class="num">${r.doc_entry ?? "—"}</td>
-    <td class="num">${r.doc_num  ?? "—"}</td>
+    <td class="num mono">${r.doc_entry ?? "—"}</td>
+    <td class="num mono">${r.doc_num  ?? "—"}</td>
     <td class="mono">${r.cuenta  || "—"}</td>
     <td>${r.error || "—"}</td>
     </tr>
 `).join("");
 }
 
-// ── Reiniciar / descargar ────────────────────────────────────
+// ── Reiniciar / descargar ─────────────────────────────────────
 function reset() { setStep(1); showPanel(panelUpload); }
 $("#btnReset").addEventListener("click", reset);
 $("#btnNew").addEventListener("click", reset);
-$("#btnDownload").addEventListener("click", () => { window.location.href = "/api/report"; });
+$("#btnDownload").addEventListener("click", () => {
+window.location.href = "/api/report";
+});

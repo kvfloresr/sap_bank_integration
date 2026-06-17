@@ -1,6 +1,6 @@
 sap:
   base_url: "https://52.254.106.101:50000/b1s/v1"
-  company_db: "BOLIVIAN_FOODS_PROD"
+  company_db: "BF_TESTINT"
   username: "INTSALAR"
   password: "z+Y&LR8a"
   session_timeout_minutes: 30

@@ -1,0 +1,35 @@
+# ============================================================
+# docker-compose.yml — SAP Bank Integration
+#
+# Uso en el servidor:
+#   cd C:\Proyectos\sap_bank_integration
+#   docker compose up -d --build
+# ============================================================
+services:
+  sap-bank-web:
+    build: .
+    container_name: sap_bank_web
+    restart: always
+    ports:
+      - "5000:5000"
+    volumes:
+      # Carpetas de datos montadas desde el servidor Windows
+      # Los Excel de entrada y los reportes quedan en el servidor, no en el contenedor
+      - C:\SAP_LTH:/data/lth
+      - C:\SAP_BurgerKing:/data/bk
+      # Config montado como solo-lectura: editar en el servidor y reiniciar
+      - ./config:/app/config:ro
+    environment:
+      - SAP_WEB_SECRET=cambiar-por-clave-segura
+    healthcheck:
+      test: ["CMD", "python", "-c",
+            "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

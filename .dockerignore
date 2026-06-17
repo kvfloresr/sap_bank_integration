@@ -1,0 +1,12 @@
+.venv/
+.venv-1/
+.git/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.xlsx
+test_local.py
+watcher.py
+json/
+README.md

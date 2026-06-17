@@ -79,7 +79,7 @@ Estados del reporte: **EXITO** (verde), **ERROR** (rojo), **OBSERVADO** (amarill
 no parseable), **OMITIDA** (azul, ya existía en SAP). Un archivo va a `processed/` si solo
 tiene EXITO y/o OMITIDA; va a `errors/` si hay algún ERROR u OBSERVADO.
 
-## ⚠️ Antes del go-live: verifica el esquema real
+##  Antes del go-live: verifica el esquema real
 
 1. **Campos de tarjeta.** El diseño original decía `CreditCards`/`CreditCardCode`, pero Service
    Layer real usa la colección **`PaymentCreditCards`** y el campo **`CreditCard`** (entero, el

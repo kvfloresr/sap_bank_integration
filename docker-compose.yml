@@ -10,11 +10,11 @@ services:
       - C:\SAP_BurgerKing:/data/bk
       - ./config:/app/config:ro
     environment:
-      - SAP_WEB_SECRET=cambiar-por-clave-segura
+      - SAP_WEB_SECRET=- SAP_WEB_SECRET=Comversa2026$SAP#Pagos!
       - DB_SERVER=192.168.250.13
       - DB_NAME=SAPBankAudit
-      - DB_USER=sa
-      - DB_PASSWORD=TU_PASSWORD_AQUI
+      - DB_USER=sistemas
+      - DB_PASSWORD=soporte..
     healthcheck:
       test: ["CMD", "python", "-c",
             "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]

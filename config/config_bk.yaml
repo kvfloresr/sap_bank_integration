@@ -1,0 +1,37 @@
+sap:
+  base_url: "https://52.254.106.101:50000/b1s/v1"
+  company_db: "BF_TESTINT"
+  username: "INTSALAR"
+  password: "z+Y&LR8a"
+  session_timeout_minutes: 30
+  verify_ssl: false
+
+paths:
+  inbound:   "C:\\SAP_BurgerKing\\inbound"
+  processed: "C:\\SAP_BurgerKing\\procesados"
+  errors:    "C:\\SAP_BurgerKing\\errores"
+  reports:   "C:\\SAP_BurgerKing\\reportes"
+
+scheduler:
+  interval_seconds: 60
+
+concurrency:
+  max_workers: 6
+
+accounts:
+  cash_account:     "_SYS00000001373"
+  transfer_account: "_SYS00000001381"
+  default_card_code: 1
+  credit_card_account: ""
+
+retry:
+  max_attempts: 3
+  backoff_seconds: 5
+
+idempotency:
+  enabled: false
+  reference_field: "U_RefBanco"
+
+logging:
+  level: "INFO"
+  file: ""

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Historial · SAP Pagos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+
+<header class="masthead">
+    <div class="masthead__brand">
+    <div class="masthead__logo">PR</div>
+    <div>
+        <h1>Historial de cargas</h1>
+        <p class="masthead__sub">Auditoría completa · {{ user.nombre }}</p>
+    </div>
+    </div>
+    <div class="masthead__nav">
+    <a href="/" class="btn btn--ghost btn--sm">← Cargas</a>
+    <a href="/admin/usuarios" class="btn btn--ghost btn--sm">Usuarios</a>
+    <a href="/logout" class="btn btn--ghost btn--sm">Salir</a>
+    </div>
+</header>
+
+<div class="admin-wrap">
+
+    <!-- Filtro por empresa -->
+    <div class="admin-card admin-card--filter">
+    <form method="GET" action="/admin/historial" class="filter-form">
+        <label class="field-label">Filtrar por empresa</label>
+        <select name="empresa_id" onchange="this.form.submit()">
+        <option value="">Todas las empresas</option>
+        {% for emp in empresas %}
+        <option value="{{ emp.id }}" {{ 'selected' if emp.id == empresa_id_sel }}>
+            {{ emp.nombre }}
+        </option>
+        {% endfor %}
+        </select>
+    </form>
+    </div>
+
+    <!-- Tabla historial -->
+    <div class="admin-card">
+    <div class="admin-card__head">
+        <h2 class="admin-card__title">
+        {{ historial|length }} registro{{ 's' if historial|length != 1 }}
+        </h2>
+    </div>
+    <div class="tablewrap" style="max-height: 600px">
+        <table class="grid">
+        <thead>
+            <tr>
+            <th>Fecha</th><th>Usuario</th><th>Empresa</th>
+            <th>Archivo</th><th>IP</th>
+            <th class="num">Total</th><th class="num">Éxito</th>
+            <th class="num">Error</th><th class="num">Observ.</th>
+            <th>Resultado</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for h in historial %}
+            <tr>
+            <td class="mono">{{ h.fecha }}</td>
+            <td>{{ h.usuario }}</td>
+            <td>{{ h.empresa }}</td>
+            <td class="mono" title="{{ h.archivo }}">
+                {{ h.archivo|truncate(30, true, '…') }}
+            </td>
+            <td class="mono">{{ h.ip or '—' }}</td>
+            <td class="num">{{ h.total }}</td>
+            <td class="num" style="color:var(--ok)">{{ h.exitos }}</td>
+            <td class="num" {% if h.errores %}style="color:var(--err)"{% endif %}>
+                {{ h.errores }}
+            </td>
+            <td class="num" {% if h.observados %}style="color:var(--warn)"{% endif %}>
+                {{ h.observados }}
+            </td>
+            <td>
+                <span class="badge {{ 'EXITO' if h.resultado == 'OK' else 'ERROR' }}">
+                {{ h.resultado }}
+                </span>
+            </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10" style="text-align:center; color:var(--ink-faint); padding:32px">
+            No hay registros todavía.
+            </td></tr>
+            {% endfor %}
+        </tbody>
+        </table>
+    </div>
+    </div>
+</div>
+</div>
+</body>
+</html>

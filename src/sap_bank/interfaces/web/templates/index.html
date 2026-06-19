@@ -12,7 +12,6 @@
 <body>
 <div class="app">
 
-<!-- Encabezado -->
 <header class="masthead">
     <div class="masthead__brand">
     <div class="masthead__logo">PR</div>
@@ -21,20 +20,29 @@
         <p class="masthead__sub">Carga de transferencias bancarias · SAP Business One</p>
     </div>
     </div>
-    <nav class="steps" aria-label="Progreso">
+    <div class="masthead__nav">
+    {% if user.rol == 'admin' %}
+    <a href="/admin/usuarios" class="btn btn--ghost btn--sm">Usuarios</a>
+    <a href="/admin/historial" class="btn btn--ghost btn--sm">Historial</a>
+    {% endif %}
+    <span class="masthead__user">{{ user.nombre }}</span>
+    <a href="/logout" class="btn btn--ghost btn--sm">Salir</a>
+    </div>
+</header>
+
+<nav class="steps-bar" aria-label="Progreso">
     <span class="step is-active" data-step="1"><b>01</b> Cargar</span>
     <span class="step__sep"></span>
     <span class="step" data-step="2"><b>02</b> Revisar</span>
     <span class="step__sep"></span>
     <span class="step" data-step="3"><b>03</b> Resultado</span>
-    </nav>
-</header>
+</nav>
 
 <!-- PASO 1: Carga -->
 <section class="panel" id="panel-upload">
     <div class="panel__intro">
     <h2>Seleccionar empresa y archivo</h2>
-    <p>Elige la empresa destino en SAP y sube el Excel de transferencias bancarias.</p>
+    <p>Elegí la empresa destino en SAP y soltá el Excel de transferencias bancarias.</p>
     </div>
 
     <div class="empresa-selector">
@@ -65,8 +73,8 @@
         </svg>
         </div>
         <div>
-        <p class="dropzone__title">Suelta el archivo Excel acá</p>
-        <p class="dropzone__hint">o haz clic para buscarlo · solo .xlsx</p>
+        <p class="dropzone__title">Soltá el archivo Excel acá</p>
+        <p class="dropzone__hint">o hacé clic para buscarlo · solo .xlsx</p>
         </div>
     </div>
     <div class="dropzone__footer">
@@ -141,7 +149,7 @@
     </div>
 </section>
 
-<!-- Overlay de carga -->
+<!-- Overlay -->
 <div class="overlay is-hidden" id="overlay">
     <div class="overlay__box">
     <div class="overlay__ring"></div>
@@ -153,7 +161,7 @@
 <!-- Toast -->
 <div class="toast is-hidden" id="toast" role="alert"></div>
 
-<!-- Modal de confirmación -->
+<!-- Modal confirmación -->
 <div class="modal is-hidden" id="modal">
     <div class="modal__backdrop"></div>
     <div class="modal__card">

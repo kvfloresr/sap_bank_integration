@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Error · SAP Pagos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-body">
+<div class="login-wrap">
+<div class="login-card" style="text-align:center">
+    <div class="login-logo" style="background:var(--err)">!</div>
+    <h1 class="login-title">Acceso no configurado</h1>
+    <p class="login-sub" style="margin-bottom:24px">{{ msg }}</p>
+    <a href="/logout" class="login-submit" style="display:block;text-decoration:none;text-align:center">
+    Volver al inicio
+    </a>
+</div>
+</div>
+</body>
+</html>

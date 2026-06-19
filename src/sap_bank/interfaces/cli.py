@@ -1,20 +1,3 @@
-"""
-cli.py  (interfaces)
---------------------
-Punto de entrada de linea de comandos para probar el pipeline completo.
-Lee un .xlsx, lo procesa y genera el reporte de conciliacion.
-
-Reemplaza al antiguo test_local.py, ahora usando la arquitectura por capas:
-  infrastructure.excel_reader  -> lee el Excel
-  application.processor        -> parsea, construye payload, postea
-  infrastructure.report_writer -> genera el .xlsx de conciliacion
-
-Uso (desde la raiz del proyecto C:\\Proyectos\\sap_bank_integration):
-    python -m src.sap_bank.interfaces.cli                  # dry-run
-    python -m src.sap_bank.interfaces.cli --sap-real       # insercion real
-    python -m src.sap_bank.interfaces.cli --xlsx ruta.xlsx # archivo especifico
-"""
-
 from __future__ import annotations
 
 import argparse

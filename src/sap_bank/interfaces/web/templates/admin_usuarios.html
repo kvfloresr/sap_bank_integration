@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Usuarios · SAP Pagos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+
+<header class="masthead">
+    <div class="masthead__brand">
+    <div class="masthead__logo">PR</div>
+    <div>
+        <h1>Gestión de usuarios</h1>
+        <p class="masthead__sub">Administrador · {{ user.nombre }}</p>
+    </div>
+    </div>
+    <div class="masthead__nav">
+    <a href="/" class="btn btn--outline btn--sm">← Cargas</a>
+    <a href="/admin/historial" class="btn btn--outline btn--sm">Historial</a>
+    <a href="/logout" class="btn btn--outline btn--sm">Salir</a>
+    </div>
+</header>
+
+<div class="admin-wrap">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div class="flash flash--{{ cat }}">{{ msg }}</div>
+    {% endfor %}
+    {% endwith %}
+
+    <!-- Crear usuario -->
+    <div class="admin-card">
+    <h2 class="admin-card__title">Nuevo usuario</h2>
+    <form method="POST" action="/admin/usuarios/nuevo" class="admin-form">
+        <div class="admin-form__grid">
+        <div class="login-field">
+            <label>Nombre completo</label>
+            <input type="text" name="nombre" placeholder="Juan Pérez" required>
+        </div>
+        <div class="login-field">
+            <label>Correo electrónico</label>
+            <input type="email" name="email" placeholder="juan@empresa.com" required>
+        </div>
+        <div class="login-field">
+            <label>Contraseña</label>
+            <input type="password" name="password" placeholder="Mínimo 8 caracteres" required>
+        </div>
+        <div class="login-field">
+            <label>Rol</label>
+            <select name="rol">
+            <option value="operador">Operador</option>
+            <option value="admin">Administrador</option>
+            </select>
+        </div>
+        <div class="login-field">
+            <label>Empresa (solo para operadores)</label>
+            <select name="empresa_id">
+            <option value="">— Sin empresa asignada —</option>
+            {% for emp in empresas %}
+            <option value="{{ emp.id }}">{{ emp.nombre }}</option>
+            {% endfor %}
+            </select>
+        </div>
+        </div>
+        <button type="submit" class="btn btn--primary">Crear usuario</button>
+    </form>
+    </div>
+
+    <!-- Lista de usuarios -->
+    <div class="admin-card">
+    <h2 class="admin-card__title">Usuarios registrados</h2>
+    <div class="tablewrap">
+        <table class="grid">
+        <thead>
+            <tr>
+            <th>Nombre</th><th>Email</th><th>Rol</th>
+            <th>Empresa</th><th>Estado</th><th>Creado</th><th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in usuarios %}
+            <tr>
+            <td>{{ u.nombre }}</td>
+            <td class="mono">{{ u.email }}</td>
+            <td>
+                <span class="badge {{ 'EXITO' if u.rol == 'admin' else 'OBSERVADO' }}">
+                {{ u.rol }}
+                </span>
+            </td>
+            <td>{{ u.empresa_nombre }}</td>
+            <td>
+                <span class="badge {{ 'EXITO' if u.activo else 'ERROR' }}">
+                {{ 'Activo' if u.activo else 'Inactivo' }}
+                </span>
+            </td>
+            <td class="mono">{{ u.creado_en.strftime('%Y-%m-%d') if u.creado_en else '—' }}</td>
+            <td>
+                <button class="btn btn--outline btn--sm btn-editar"
+                data-id="{{ u.id }}"
+                data-nombre="{{ u.nombre | e }}"
+                data-email="{{ u.email | e }}"
+                data-rol="{{ u.rol }}"
+                data-empresa="{{ u.empresa_id or '' }}"
+                data-activo="{{ 1 if u.activo else 0 }}">
+                Editar
+                </button>
+            </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        </table>
+    </div>
+    </div>
+</div>
+</div>
+
+<!-- Modal editar usuario -->
+<div class="modal is-hidden" id="modalEditar">
+<div class="modal__backdrop" onclick="cerrarEditar()"></div>
+<div class="modal__card" style="text-align:left; max-width:500px">
+    <h3 class="modal__title" style="text-align:center; margin-bottom:20px">Editar usuario</h3>
+    <form method="POST" id="formEditar" class="admin-form">
+    <div class="admin-form__grid">
+        <div class="login-field">
+        <label>Nombre</label>
+        <input type="text" name="nombre" id="editNombre" required>
+        </div>
+        <div class="login-field">
+        <label>Email</label>
+        <input type="email" name="email" id="editEmail" required>
+        </div>
+        <div class="login-field">
+        <label>Nueva contraseña (dejar vacío para no cambiar)</label>
+        <input type="password" name="password" placeholder="••••••••">
+        </div>
+        <div class="login-field">
+        <label>Rol</label>
+        <select name="rol" id="editRol">
+            <option value="operador">Operador</option>
+            <option value="admin">Administrador</option>
+        </select>
+        </div>
+        <div class="login-field">
+        <label>Empresa</label>
+        <select name="empresa_id" id="editEmpresa">
+            <option value="">— Sin empresa —</option>
+            {% for emp in empresas %}
+            <option value="{{ emp.id }}">{{ emp.nombre }}</option>
+            {% endfor %}
+        </select>
+        </div>
+        <div class="login-field">
+        <label>Estado</label>
+        <select name="activo" id="editActivo">
+            <option value="1">Activo</option>
+            <option value="0">Inactivo</option>
+        </select>
+        </div>
+    </div>
+    <div class="modal__btns">
+        <button type="button" class="btn btn--ghost" onclick="cerrarEditar()">Cancelar</button>
+        <button type="submit" class="btn btn--primary">Guardar cambios</button>
+    </div>
+    </form>
+</div>
+</div>
+
+<script>
+document.querySelectorAll(".btn-editar").forEach(function(btn) {
+btn.addEventListener("click", function() {
+    var id      = this.dataset.id;
+    var nombre  = this.dataset.nombre;
+    var email   = this.dataset.email;
+    var rol     = this.dataset.rol;
+    var empresa = this.dataset.empresa;
+    var activo  = this.dataset.activo;
+    document.getElementById("formEditar").action       = "/admin/usuarios/" + id + "/editar";
+    document.getElementById("editNombre").value        = nombre;
+    document.getElementById("editEmail").value         = email;
+    document.getElementById("editRol").value           = rol;
+    document.getElementById("editEmpresa").value       = empresa;
+    document.getElementById("editActivo").value        = activo;
+    document.getElementById("modalEditar").classList.remove("is-hidden");
+});
+});
+function cerrarEditar() {
+document.getElementById("modalEditar").classList.add("is-hidden");
+}
+</script>
+</body>
+</html>

@@ -1,37 +1,43 @@
 sap:
-  base_url: "https://52.254.106.101:50000/b1s/v1"
-  company_db: "BF_TESTINT"
-  username: "INTSALAR"
-  password: "z+Y&LR8a"
+  base_url:                "https://52.254.106.101:50000/b1s/v1"
+  company_db:              "BF_TESTINT"
+  username:                "INTSALAR"
+  password:                "z+Y&LR8a"
   session_timeout_minutes: 30
-  verify_ssl: false
+  verify_ssl:              false
 
 paths:
+  # Web — IncomingPayments (Excel)
   inbound:   "C:\\SAP_BurgerKing\\inbound"
   processed: "C:\\SAP_BurgerKing\\procesados"
   errors:    "C:\\SAP_BurgerKing\\errores"
   reports:   "C:\\SAP_BurgerKing\\reportes"
+  # Watcher automático — JournalEntries (TXT)
+  journal_inbound:   "C:\\SAP_BurgerKing\\Journal\\Inbound"
+  journal_processed: "C:\\SAP_BurgerKing\\Journal\\Procesados"
+  journal_errors:    "C:\\SAP_BurgerKing\\Journal\\Errores"
+  journal_logs:      "C:\\SAP_BurgerKing\\Journal\\Logs"
 
 scheduler:
-  interval_seconds: 60
+  interval_seconds: 30
 
 concurrency:
   max_workers: 6
 
 accounts:
-  cash_account:     "_SYS00000001373"
-  transfer_account: "_SYS00000001381"
+  cash_account:      "_SYS00000001373"
+  transfer_account:  "_SYS00000001381"
   default_card_code: 1
   credit_card_account: ""
 
 retry:
-  max_attempts: 3
+  max_attempts:    3
   backoff_seconds: 5
 
 idempotency:
-  enabled: false
+  enabled:         false
   reference_field: "U_RefBanco"
 
 logging:
   level: "INFO"
-  file: ""
+  file:  ""

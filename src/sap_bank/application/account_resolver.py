@@ -1,19 +1,3 @@
-"""
-account_resolver.py
--------------------
-Resuelve codigos externos de cuentas contables (ej: '111500001-0') al codigo
-interno de SAP (_SYS...) que acepta IncomingPayments.
-
-El banco entrega codigos con formato 'XXXXXXXX-N' (ExternalCode en SAP).
-Service Layer solo acepta el Code interno (_SYS...) en los payloads.
-Este modulo hace un GET a ChartOfAccounts, busca por ExternalCode o por Code
-y devuelve el Code interno posteable.
-
-El cache evita consultas repetidas para la misma cuenta dentro del mismo
-archivo — si el Excel tiene 100 filas con la misma cuenta, solo se hace
-1 GET a SAP.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -55,6 +39,7 @@ class AccountResolver:
 
         # Intentar resolver
         resolved = self._fetch_by_external_code(code) \
+                or self._fetch_by_format_code(code) \
                 or self._fetch_by_code(code)
 
         if resolved:
@@ -92,6 +77,30 @@ class AccountResolver:
                     return rows[0]["Code"]
         except Exception as exc:
             logger.warning("Error buscando ExternalCode '%s': %s", code, exc)
+        return None
+
+    def _fetch_by_format_code(self, code: str) -> Optional[str]:
+        """Busca la cuenta por FormatCode (ej: '52101011' sin guión)."""
+        safe = code.replace("'", "''")
+        try:
+            resp = self._session.get(
+                f"{self._base_url}/ChartOfAccounts",
+                params={
+                    "$filter": f"FormatCode eq '{safe}'",
+                    "$select": "Code,Name,FormatCode",
+                    "$top": 1,
+                },
+                verify=self._verify,
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                rows = resp.json().get("value", [])
+                if rows:
+                    logger.debug("FormatCode '%s' -> Code='%s' Name='%s'",
+                                code, rows[0]["Code"], rows[0].get("Name"))
+                    return rows[0]["Code"]
+        except Exception as exc:
+            logger.warning("Error buscando FormatCode '%s': %s", code, exc)
         return None
 
     def _fetch_by_code(self, code: str) -> Optional[str]:
